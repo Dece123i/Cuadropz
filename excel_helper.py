@@ -252,7 +252,23 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
                         
             for task in pending_tasks:
                 desc_key = task['description'].strip().upper()
-                solution = report_suggestions.get(desc_key, "")
+                solution_val = report_suggestions.get(desc_key, "")
+                
+                # Extract solution text from dictionary or string representation
+                if isinstance(solution_val, dict):
+                    solution = solution_val.get("alternativa_solucion", "")
+                elif isinstance(solution_val, str) and (solution_val.strip().startswith("{") or solution_val.strip().startswith("'{")):
+                    import json
+                    try:
+                        parsed_val = json.loads(solution_val.replace("'", '"'))
+                        if isinstance(parsed_val, dict):
+                            solution = parsed_val.get("alternativa_solucion", "")
+                        else:
+                            solution = solution_val
+                    except Exception:
+                        solution = solution_val
+                else:
+                    solution = solution_val
                 
                 t_desc = task['description']
                 t_time = task['time_info']
