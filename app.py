@@ -5,6 +5,7 @@ import json
 import calendar as pycal
 import pandas as pd
 import re
+import plotly.express as px
 from database import (
     db_init, db_import_excel, get_tasks, add_task, update_task_completion,
     update_task_priority, update_task_details, delete_task, get_last_finalized_date,
@@ -13,8 +14,12 @@ from database import (
     get_tasks_by_user_and_date, get_completed_tasks_count, get_last_report,
     get_last_export_info, save_last_export_info, update_report_suggestions
 )
+import importlib
+import ai_helper
+importlib.reload(ai_helper)
 from ai_helper import generate_alternatives, generate_single_alternative
 from excel_helper import export_weekly_tasks_to_excel, get_week_dates
+from email_helper import send_email, load_email_config, save_email_config
 
 # Initialize database and import data
 db_init()
@@ -75,34 +80,262 @@ st.set_page_config(
 # ----------------- GLOBAL STYLING (DARK/LIGHT MODE OPTIMIZATIONS) -----------------
 st.markdown(f"""
     <style>
-    /* Base configuration (Light Mode) */
-    .stApp {{
-        background-color: #FAF8F2 !important;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    
+    /* System variables for Color Palette */
+    :root {{
+        --primary-color: #1E3A8A;
+        --secondary-color: #3B82F6;
+        --accent-color: #10B981;
+        --warning-color: #F59E0B;
+        --bg-color: #F8FAFC;
+        --text-color: #1E293B;
+        --card-bg: #FFFFFF;
+        --card-border: #E2E8F0;
+        --column-bg: #FFFFFF;
+        --column-border: #E2E8F0;
+        --sidebar-bg: #FFFFFF;
+        --sidebar-text: #1E293B;
+        --sidebar-shadow: 4px 0 20px rgba(0, 0, 0, 0.05);
     }}
     
-    .metric-card {{
-        background-color: white;
-        border: 1px solid #E6E2D8;
-        border-radius: 8px;
-        padding: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+    /* Dark Theme Overrides */
+    @media (prefers-color-scheme: dark) {{
+        :root {{
+            --bg-color: #0F172A;
+            --text-color: #E2E8F0;
+            --card-bg: #1E293B;
+            --card-border: #334155;
+            --column-bg: #1E293B;
+            --column-border: #334155;
+            --sidebar-bg: #1E293B;
+            --sidebar-text: #E2E8F0;
+            --sidebar-shadow: none;
+        }}
+    }}
+    
+    [data-theme="dark"], [data-theme="dark"] .stApp, .stApp[data-theme="dark"], [data-testid="stAppViewContainer"][data-theme="dark"] {{
+        --bg-color: #0F172A;
+        --text-color: #E2E8F0;
+        --card-bg: #1E293B;
+        --card-border: #334155;
+        --column-bg: #1E293B;
+        --column-border: #334155;
+        --sidebar-bg: #1E293B;
+        --sidebar-text: #E2E8F0;
+        --sidebar-shadow: none;
+    }}
+    
+    .stApp {{
+        background-color: var(--bg-color) !important;
+        color: var(--text-color) !important;
+        line-height: 1.6 !important;
+    }}
+    
+    .stApp {{
+        font-family: 'Inter', sans-serif !important;
+    }}
+    
+    /* Main title gradient header */
+    .gradient-text {{
+        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
+        font-weight: 800 !important;
     }}
     
     .fixed-header {{
-        border-bottom: 2px solid #E6E2D8;
-        padding-bottom: 10px;
-        margin-bottom: 20px;
+        border-bottom: 1px solid var(--card-border) !important;
+        padding-bottom: 16px !important;
+        margin-bottom: 24px !important;
     }}
     
-    /* Day column containers in Light Mode */
+    /* Cards styling as requested */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background-color: var(--card-bg) !important;
+        border: 1px solid var(--card-border) !important;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important;
+        animation: fadeInUp 0.5s ease-out both !important;
+    }}
+    
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
+        transform: translateY(-4px) !important;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.12) !important;
+        border-color: var(--secondary-color) !important;
+    }}
+    
+    /* Remove card inner margin padding override to look neat */
+    div[data-testid="stVerticalBlockBorderWrapper"] > div {{
+        padding: 0 !important;
+    }}
+    
+    /* Columns styling */
     div[data-testid="column"] {{
-        background-color: #F8F5EE;
-        border: 1px solid #E6E2D8;
-        border-radius: 8px;
-        padding: 10px;
+        background-color: var(--column-bg) !important;
+        border: 1px solid var(--column-border) !important;
+        border-radius: 16px !important;
+        padding: 16px !important;
+        transition: background-color 0.3s ease, border-color 0.3s ease !important;
     }}
     
-    /* Popover FAB Button styling (Always Blue) */
+    /* Button styles */
+    button[data-testid="baseButton-primary"], button[kind="primary"] {{
+        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 10px 24px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 4px 12px rgba(30, 58, 138, 0.25) !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease !important;
+    }}
+    button[data-testid="baseButton-primary"]:hover, button[kind="primary"]:hover {{
+        transform: scale(1.02) !important;
+        box-shadow: 0 6px 16px rgba(30, 58, 138, 0.4) !important;
+        opacity: 0.95 !important;
+    }}
+    
+    button[data-testid="baseButton-secondary"], button[kind="secondary"] {{
+        background: transparent !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--card-border) !important;
+        border-radius: 12px !important;
+        padding: 10px 24px !important;
+        font-weight: 500 !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important;
+    }}
+    button[data-testid="baseButton-secondary"]:hover, button[kind="secondary"]:hover {{
+        transform: scale(1.02) !important;
+        border-color: var(--secondary-color) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+    }}
+    
+    /* Sidebar customization */
+    section[data-testid="stSidebar"] {{
+        background-color: var(--sidebar-bg) !important;
+        box-shadow: var(--sidebar-shadow) !important;
+        border-right: 1px solid var(--card-border) !important;
+    }}
+    
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] li {{
+        color: var(--sidebar-text) !important;
+    }}
+    
+    section[data-testid="stSidebar"] hr {{
+        border-color: var(--card-border) !important;
+    }}
+    
+    /* Compactar barra lateral */
+    .stSidebar {{
+        padding: 16px 12px !important;
+    }}
+    .stSidebar .stSelectbox,
+    .stSidebar .stTextInput,
+    .stSidebar .stButton,
+    .stSidebar .stExpander,
+    .stSidebar .stMarkdown {{
+        margin-bottom: 8px !important;
+        line-height: 1.6 !important;
+    }}
+    .stSidebar .stExpander {{
+        margin-top: 4px !important;
+    }}
+    .stSidebar .stExpander .stExpanderHeader {{
+        padding: 8px 0px !important;
+        font-size: 0.95rem !important;
+    }}
+    .stSidebar .stRadio > div {{
+        gap: 6px !important;
+    }}
+    .stSidebar .stMetric {{
+        margin-bottom: 4px !important;
+    }}
+    .stSidebar h1, .stSidebar h2, .stSidebar h3, .stSidebar h4 {{
+        margin-top: 8px !important;
+        margin-bottom: 12px !important;
+    }}
+    
+    /* Botones visuales de navegacion en la barra lateral */
+    section[data-testid="stSidebar"] button[data-testid="baseButton-primary"],
+    section[data-testid="stSidebar"] button[kind="primary"] {{
+        display: block !important;
+        width: 100% !important;
+        padding: 12px 16px !important;
+        margin-bottom: 8px !important;
+        border-radius: 12px !important;
+        background: #1E3A8A !important;
+        color: white !important;
+        border: 1px solid #1E3A8A !important;
+        font-weight: 500 !important;
+        font-size: 1rem !important;
+        text-align: left !important;
+        box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3) !important;
+        transition: all 0.2s ease !important;
+        font-family: 'Inter', sans-serif !important;
+    }}
+
+    section[data-testid="stSidebar"] button[data-testid="baseButton-primary"]:hover,
+    section[data-testid="stSidebar"] button[kind="primary"]:hover {{
+        background: #1e40af !important;
+        border-color: #1e40af !important;
+        transform: translateX(4px) !important;
+    }}
+
+    section[data-testid="stSidebar"] button[data-testid="baseButton-secondary"],
+    section[data-testid="stSidebar"] button[kind="secondary"] {{
+        display: block !important;
+        width: 100% !important;
+        padding: 12px 16px !important;
+        margin-bottom: 8px !important;
+        border: 1px solid #e5e7eb !important;
+        border-radius: 12px !important;
+        background: transparent !important;
+        color: #4b5563 !important;
+        font-weight: 500 !important;
+        font-size: 1rem !important;
+        text-align: left !important;
+        transition: all 0.2s ease !important;
+        font-family: 'Inter', sans-serif !important;
+    }}
+
+    section[data-testid="stSidebar"] button[data-testid="baseButton-secondary"]:hover,
+    section[data-testid="stSidebar"] button[kind="secondary"]:hover {{
+        background: #f3f4f6 !important;
+        border-color: #9ca3af !important;
+        color: #1e293b !important;
+        transform: translateX(4px) !important;
+    }}
+
+    /* Modo Oscuro para botones secundarios inactivos */
+    [data-theme="dark"] section[data-testid="stSidebar"] button[data-testid="baseButton-secondary"],
+    [data-theme="dark"] section[data-testid="stSidebar"] button[kind="secondary"] {{
+        border-color: #334155 !important;
+        color: #94a3b8 !important;
+    }}
+    [data-theme="dark"] section[data-testid="stSidebar"] button[data-testid="baseButton-secondary"]:hover,
+    [data-theme="dark"] section[data-testid="stSidebar"] button[kind="secondary"]:hover {{
+        background: #1e293b !important;
+        border-color: #475569 !important;
+        color: #f1f5f9 !important;
+    }}
+    
+    /* Rounded active user selectbox */
+    div[data-testid="stSelectbox"] > div {{
+        border-radius: 12px !important;
+    }}
+    div[data-testid="stSelectbox"] div[role="combobox"] {{
+        border-radius: 12px !important;
+        border: 1px solid var(--card-border) !important;
+        background-color: var(--card-bg) !important;
+    }}
+    
+    /* Popover FAB Button styling (Always Blue/Deep Blue) */
     div[data-testid="stPopover"] {{
         position: fixed !important;
         bottom: 30px !important;
@@ -114,20 +347,20 @@ st.markdown(f"""
         width: 60px !important;
         height: 60px !important;
         font-size: 24px !important;
-        box-shadow: 0 4px 14px rgba(31, 119, 180, 0.4) !important;
-        background-color: #1f77b4 !important;
+        box-shadow: 0 4px 14px rgba(30, 58, 138, 0.3) !important;
+        background-color: var(--primary-color) !important;
         color: white !important;
         border: none !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         position: relative !important;
-        transition: all 0.2s ease !important;
+        transition: all 0.3s ease !important;
     }}
     div[data-testid="stPopover"] button:hover {{
         transform: scale(1.08) !important;
-        background-color: #175d8f !important;
-        box-shadow: 0 6px 20px rgba(31, 119, 180, 0.6) !important;
+        background-color: var(--secondary-color) !important;
+        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5) !important;
     }}
     div[data-testid="stPopover"] div[data-testid="stPopoverBody"] {{
         position: absolute !important;
@@ -136,70 +369,36 @@ st.markdown(f"""
         width: 340px !important;
         max-height: 480px !important;
         overflow-y: auto !important;
-        border-radius: 12px !important;
+        border-radius: 16px !important;
         box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
-        border: 1px solid rgba(128, 128, 128, 0.2) !important;
-        background-color: var(--background-color) !important;
+        border: 1px solid var(--card-border) !important;
+        background-color: var(--card-bg) !important;
     }}
     
-    /* Inject badge dynamically */
     {badge_css}
     
-    /* ========================================================================= */
-    /* Dark Mode Configurations (prefers-color-scheme: dark) */
-    /* ========================================================================= */
-    @media (prefers-color-scheme: dark) {{
-        :root {{
-            --background-color: #121212 !important;
-            --secondary-background-color: #1e1e1e !important;
-            --text-color: #f3f4f6 !important;
+    /* Custom subheadings and secondary labels */
+    h2, h3, .subtitle {{
+        color: #64748B !important;
+        font-weight: 500 !important;
+    }}
+    [data-theme="dark"] h2, [data-theme="dark"] h3 {{
+        color: #94A3B8 !important;
+    }}
+    
+    /* Animación fadeInUp */
+    @keyframes fadeInUp {{
+        from {{
+            opacity: 0;
+            transform: translateY(12px);
         }}
-        
-        .stApp {{
-            background-color: #121212 !important;
-            color: #f3f4f6 !important;
-        }}
-        
-        /* Dark Sidebar override */
-        section[data-testid="stSidebar"] {{
-            background-color: #1e1e1e !important;
-            color: #f3f4f6 !important;
-        }}
-        section[data-testid="stSidebar"] * {{
-            color: #f3f4f6 !important;
-        }}
-        section[data-testid="stSidebar"] hr {{
-            border-color: #374151 !important;
-        }}
-        
-        /* Day column containers in Dark Mode (slightly darker than bg) */
-        div[data-testid="column"] {{
-            background-color: #1e1e1e !important;
-            border: 1px solid #2d2d2d !important;
-        }}
-        
-        /* Task card boxes and Metric cards in Dark Mode */
-        div[data-testid="stVerticalBlockBorderWrapper"] {{
-            background-color: #181818 !important;
-            border: 1px solid #2d2d2d !important;
-        }}
-        
-        .metric-card {{
-            background-color: #181818 !important;
-            border: 1px solid #2d2d2d !important;
-            color: #f3f4f6 !important;
-        }}
-        
-        /* High contrast text colors for headings and paragraphs */
-        h1, h2, h3, h4, h5, h6, p, span, label, li {{
-            color: #f3f4f6 !important;
-        }}
-        div[data-testid="stMarkdownContainer"] p {{
-            color: #f3f4f6 !important;
+        to {{
+            opacity: 1;
+            transform: translateY(0);
         }}
     }}
     
-    /* Legend color items */
+    /* Legend items */
     .legend-box {{
         display: inline-block;
         width: 12px;
@@ -208,15 +407,149 @@ st.markdown(f"""
         margin-right: 6px;
     }}
     
-    /* Clean table formatting */
-    .report-card {{
-        border: 1px solid rgba(128, 128, 128, 0.15);
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 12px;
+    /* Report Card styling */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.report-card-anchor) {{
+        background-color: var(--card-bg) !important;
+        border-radius: 12px !important;
+        padding: 20px 24px !important;
+        margin-bottom: 20px !important;
+        border-left: 4px solid #3B82F6 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06) !important;
+        transition: all 0.2s ease !important;
+        animation: fadeInUp 0.5s ease-out both !important;
+    }}
+    
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.report-card-anchor):hover {{
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+        transform: translateY(-2px) !important;
+    }}
+    
+    /* Metadata formatting inside report cards */
+    .report-date {{
+        font-weight: 700 !important;
+        color: var(--primary-color) !important;
+        font-size: 1.15rem !important;
+        margin-bottom: 4px !important;
+    }}
+    
+    .report-user {{
+        font-weight: 500 !important;
+        color: #64748B !important;
+        font-size: 1rem !important;
+        margin-bottom: 8px !important;
+    }}
+    
+    [data-theme="dark"] .report-user {{
+        color: #94A3B8 !important;
+    }}
+    
+    .report-stats {{
+        font-size: 1rem !important;
+        font-weight: 600 !important;
+        margin-top: 8px !important;
+        margin-bottom: 8px !important;
+    }}
+    
+    .report-completed {{
+        color: #10B981 !important;
+    }}
+    
+    .report-pending {{
+        color: #F59E0B !important;
     }}
     </style>
 """, unsafe_allow_html=True)
+
+# Load email config and start background scheduler
+email_config = load_email_config()
+
+@st.cache_resource
+def start_email_scheduler_service():
+    import threading
+    import time
+    import datetime
+    
+    def scheduler_loop():
+        while True:
+            cfg = load_email_config()
+            if cfg.get("auto_send_enabled", False):
+                now = datetime.datetime.now()
+                # Check if it is exactly 8:00 AM (runs once per day)
+                if now.hour == 8 and now.minute == 0:
+                    last_sent = cfg.get("last_sent_date", "")
+                    today_s = now.strftime("%Y-%m-%d")
+                    if last_sent != today_s:
+                        # Fetch pending tasks for all users
+                        from database import get_users, get_tasks, get_overdue_pending_tasks
+                        users = get_users()
+                        
+                        smtp_srv = cfg.get("smtp_server", "smtp.gmail.com")
+                        smtp_prt = cfg.get("smtp_port", "587")
+                        sender_em = cfg.get("sender_email", "")
+                        sender_pw = cfg.get("sender_password", "")
+                        recipient_em = cfg.get("recipient_email", "")
+                        
+                        if sender_em and sender_pw and recipient_em:
+                            body = f"Hola,\n\nEste es el resumen automatizado de tareas pendientes de las 8:00 AM para hoy ({today_s}):\n\n"
+                            has_tasks = False
+                            
+                            for u in users:
+                                today_pending = [t for t in get_tasks(u, today_s) if t['completed'] == 0]
+                                overdue_pending = get_overdue_pending_tasks(u, today_s)
+                                
+                                if today_pending or overdue_pending:
+                                    has_tasks = True
+                                    body += f"👤 Colaborador: {u}\n"
+                                    
+                                    if today_pending:
+                                        body += "  📅 TAREAS DE HOY:\n"
+                                        for idx, t in enumerate(today_pending):
+                                            t_lbl = f"({t['time_info']})" if t['time_info'] else "Sin horario"
+                                            body += f"    - {t['description']} - Horario: {t_lbl} | Prioridad: {t['priority']}\n"
+                                    if overdue_pending:
+                                        body += "  ⚠️ ATRASADAS:\n"
+                                        for idx, t in enumerate(overdue_pending):
+                                            t_lbl = f"({t['time_info']})" if t['time_info'] else "Sin horario"
+                                            body += f"    - {t['description']} (del {t['date']}) - {t_lbl}\n"
+                                    body += "\n"
+                            
+                            if has_tasks:
+                                from email_helper import send_email
+                                send_email(
+                                    smtp_srv, smtp_prt, sender_em, sender_pw, 
+                                    recipient_em, f"📋 Resumen Diario Automatizado - Tareas Pendientes {today_s}", 
+                                    body
+                                )
+                            
+                            # Mark as sent for today
+                            cfg["last_sent_date"] = today_s
+                            save_email_config(cfg)
+            time.sleep(30)
+            
+    t = threading.Thread(target=scheduler_loop, daemon=True)
+    t.start()
+    return t
+    
+start_email_scheduler_service()
+
+# Helper to render structured suggestions
+def render_solution_suggestion(suggestion):
+    if isinstance(suggestion, dict):
+        prio = suggestion.get("prioridad", "Media")
+        reasign = suggestion.get("reasignacion_sugerida", "")
+        text = suggestion.get("alternativa_solucion", "")
+        
+        # Color code the priority tag
+        prio_color = "red" if prio == "Alta" else ("orange" if prio == "Media" else "green")
+        st.markdown(f"**Prioridad recomendada por la IA:** :{prio_color}[{prio}]")
+        
+        if reasign and reasign.strip() and reasign.strip().upper() != "NONE":
+            st.markdown(f"👥 **Reasignación sugerida:** `{reasign}`")
+            
+        st.info(f"💡 Sugerencia de Solución:\n{text}")
+    else:
+        # Fallback for old text format
+        st.info(f"💡 Sugerencia de Solución:\n{suggestion}")
 
 # ----------------- SESSION STATE INIT -----------------
 if "nav_selection" not in st.session_state:
@@ -227,62 +560,35 @@ if "selected_date" not in st.session_state:
 
 # ----------------- SIDEBAR -----------------
 with st.sidebar:
-    st.title("💼 CUADROpz")
-    st.subheader("Control de Producción")
-    st.divider()
+    # 1. Logo y encabezado corporativo
+    st.markdown(
+        """
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+            <span style="font-size: 2.2rem;">📊</span>
+            <span style="font-weight: 800; font-size: 2.2rem; background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">CUADROpz</span>
+        </div>
+        <div style="font-size: 0.75rem; font-weight: 700; color: #64748B; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 20px; padding-left: 2px;">
+            Control de Producción
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.markdown("---")
     
     selected_user = st.selectbox(
         "Usuario Activo:",
         all_users,
-        index=all_users.index(st.session_state["current_user"])
+        index=all_users.index(st.session_state.get("current_user", all_users[0])),
+        key="sidebar_active_user_selectbox"
     )
-    st.session_state["current_user"] = selected_user
-    
-    # Expandable section for User Management
-    with st.expander("👥 Gestión de Usuarios"):
-        st.markdown("**Agregar Usuario:**")
-        new_name = st.text_input("Nombre del colaborador:", key="new_user_name_input")
-        if st.button("Agregar Nuevo Usuario", use_container_width=True):
-            if new_name.strip():
-                if add_user(new_name.strip()):
-                    st.success(f"Usuario '{new_name}' creado.")
-                    st.session_state["current_user"] = new_name.strip()
-                    st.rerun()
-                else:
-                    st.error("El usuario ya existe.")
-            else:
-                st.error("El nombre no puede estar vacío.")
-                
-        st.divider()
+    if selected_user != st.session_state.get("current_user"):
+        st.session_state["current_user"] = selected_user
+        st.session_state["user_name"] = selected_user
+        st.rerun()
         
-        st.markdown("**Eliminar Usuario:**")
-        user_to_del = st.selectbox("Seleccione usuario:", all_users, key="delete_user_selectbox")
-        if st.button("Eliminar Usuario", type="primary", use_container_width=True):
-            if user_to_del == selected_user:
-                st.warning("No puedes eliminarte a ti mismo.")
-            else:
-                if delete_user(user_to_del):
-                    st.success(f"Usuario '{user_to_del}' eliminado.")
-                    all_users = get_users()
-                    if all_users:
-                        st.session_state["current_user"] = all_users[0]
-                    st.rerun()
-                else:
-                    st.error("No se pudo eliminar el usuario.")
-                    
-    # AI Configuration Expandable Section
-    with st.expander("Configuración de IA", icon=":material/settings:", expanded=False):
-        st.text_input(
-            "Clave API de OpenAI",
-            type="password",
-            key="openai_api_key",
-            placeholder="sk-...",
-        )
-        st.caption("Opcional: solo necesario para regenerar sugerencias en Informes")
-                    
-    st.divider()
+    st.markdown("---")
     
-    # Navigation Links
+    # 2. NAVEGACIÓN (Primera posición)
     nav_options = [
         "🏠 Inicio",
         "📋 Pizarra",
@@ -290,28 +596,171 @@ with st.sidebar:
         "📥 Exportar",
         "📅 Calendario"
     ]
-    
-    # Sync navigation buttons
+    st.markdown("**Navegación:**")
+    current_sel = st.session_state.get("nav_selection", "🏠 Inicio")
     for opt in nav_options:
-        btn_type = "primary" if st.session_state["nav_selection"] == opt else "secondary"
-        if st.button(opt, type=btn_type, use_container_width=True):
+        btn_type = "primary" if current_sel == opt else "secondary"
+        if st.button(opt, type=btn_type, use_container_width=True, key=f"nav_btn_{opt}"):
             st.session_state["nav_selection"] = opt
             st.rerun()
             
+    # 3. ESTADO DE HOY (Segunda posición)
+    st.markdown("---")
+    today_tasks = get_tasks(st.session_state.get("current_user", "MARY CRUZ"), today_str)
+    
+    if not today_tasks:
+        st.markdown("📊 **Estado de Hoy:**\n*Sin tareas programadas*")
+    else:
+        st.markdown("📊 **Estado de Hoy:**")
+        completed_count = len([t for t in today_tasks if t['completed'] == 1])
+        pending_count = len([t for t in today_tasks if t['completed'] == 0])
+        
+        col_stat1, col_stat2 = st.columns(2)
+        col_stat1.metric("⏳ Pendientes", pending_count)
+        col_stat2.metric("✅ Completadas", completed_count)
+        
+    st.markdown("---")
+    
+    # 4. GESTIÓN DE USUARIOS (Tercera posición)
+    with st.expander("👥 Gestión de Usuarios", expanded=False):
+        st.markdown("**Nuevo Usuario:**")
+        new_name = st.text_input("Nombre colaborador:", key="new_user_name_input")
+        
+        col_user_actions = st.columns(2)
+        with col_user_actions[0]:
+            if st.button("Agregar", key="add_user_btn", use_container_width=True):
+                if new_name.strip():
+                    if add_user(new_name.strip()):
+                        st.success(f"Creado: {new_name}")
+                        st.session_state["current_user"] = new_name.strip()
+                        st.rerun()
+                    else:
+                        st.error("Ya existe")
+                else:
+                    st.error("Vacío")
+        with col_user_actions[1]:
+            if st.button("Eliminar", key="delete_user_btn_sidebar", use_container_width=True):
+                user_to_del = selected_user
+                if user_to_del == st.session_state.get("current_user"):
+                    st.warning("No puedes eliminarte")
+                else:
+                    if delete_user(user_to_del):
+                        st.success(f"Eliminado: {user_to_del}")
+                        all_users = get_users()
+                        if all_users:
+                            st.session_state["current_user"] = all_users[0]
+                        st.rerun()
+                    else:
+                        st.error("Error")
+                        
+    # 5. CONFIGURACIÓN DE IA (Cuarta posición)
+    with st.expander("⚙️ Configuración de IA", expanded=False):
+        st.text_input(
+            "Clave API de OpenAI:",
+            type="password",
+            key="openai_api_key",
+            placeholder="sk-...",
+        )
+        st.caption("Opcional: necesario para regenerar sugerencias")
+        
+    # 6. CONFIGURACIÓN DE CORREO (Quinta posición)
+    with st.expander("📧 Configuración de Correo", expanded=False):
+        smtp_server = st.text_input("Servidor SMTP:", value=email_config.get("smtp_server", "smtp.gmail.com"), key="sidebar_smtp_server")
+        smtp_port = st.text_input("Puerto SMTP:", value=email_config.get("smtp_port", "587"), key="sidebar_smtp_port")
+        sender_email = st.text_input("Correo Emisor:", value=email_config.get("sender_email", ""), key="sidebar_sender_email", placeholder="tu@gmail.com")
+        sender_password = st.text_input("Contraseña de Aplicación:", value=email_config.get("sender_password", ""), type="password", key="sidebar_sender_password", placeholder="xxxx xxxx")
+        recipient_email = st.text_input("Correo Destinatario:", value=email_config.get("recipient_email", ""), key="sidebar_recipient_email", placeholder="destinatario@gmail.com")
+        
+        auto_send_enabled = st.checkbox("Activar recordatorio (8:00 AM)", value=email_config.get("auto_send_enabled", False), key="sidebar_auto_send_enabled")
+        
+        col_email_btn1, col_email_btn2 = st.columns(2)
+        with col_email_btn1:
+            if st.button("💾 Guardar", key="save_email_config_btn", use_container_width=True):
+                new_cfg = {
+                    "smtp_server": smtp_server,
+                    "smtp_port": smtp_port,
+                    "sender_email": sender_email,
+                    "sender_password": sender_password,
+                    "recipient_email": recipient_email,
+                    "auto_send_enabled": auto_send_enabled,
+                    "last_sent_date": email_config.get("last_sent_date", "")
+                }
+                if save_email_config(new_cfg):
+                    st.success("Guardado")
+                    email_config = new_cfg
+                else:
+                    st.error("Error")
+        with col_email_btn2:
+            if st.button("🧪 Probar", key="test_email_btn", use_container_width=True):
+                if not sender_email or not sender_password or not recipient_email:
+                    st.warning("Faltan datos")
+                else:
+                    with st.spinner("Enviando..."):
+                        success, msg = send_email(
+                            smtp_server, smtp_port, sender_email, sender_password, 
+                            recipient_email, "🧪 Correo de prueba - CUADROpz", 
+                            "Este es un correo de prueba de CUADROpz para validar tu configuración SMTP."
+                        )
+                        if success:
+                            st.success("¡Enviado!")
+                        else:
+                            st.error(msg)
+                            
     st.divider()
     
-    # Show Today's Finalization Status
-    today_reports = get_reports(selected_user, today_str, today_str)
-    status_msg = "✅ Día Finalizado" if today_reports else "⏳ Cierre Pendiente"
-    st.markdown(f"**Estado de Hoy:**\n`{status_msg}`")
+    # Button to send daily summary manually
+    if st.button("📧 Enviar Resumen de Hoy", key="send_today_summary_btn_manual", use_container_width=True):
+        cfg_srv = email_config.get("smtp_server", "smtp.gmail.com")
+        cfg_prt = email_config.get("smtp_port", "587")
+        cfg_snd = email_config.get("sender_email", "")
+        cfg_pwd = email_config.get("sender_password", "")
+        cfg_rcp = email_config.get("recipient_email", "")
+        
+        if not cfg_snd or not cfg_pwd or not cfg_rcp:
+            st.error("Por favor completa las credenciales de correo en el panel lateral.")
+        else:
+            today_pending = [t for t in get_tasks(st.session_state.get("current_user", "MARY CRUZ"), today_str) if t['completed'] == 0]
+            overdue_pending = get_overdue_pending_tasks(st.session_state.get("current_user", "MARY CRUZ"), today_str)
+            
+            if not today_pending and not overdue_pending:
+                body_text = f"Hola,\n\nNo tienes tareas pendientes programadas para hoy ({today_str}).\n\n¡Excelente día!\nCUADROpz"
+            else:
+                body_text = f"Hola,\n\nEste es tu resumen de tareas pendientes para hoy ({today_str}):\n\n"
+                
+                if today_pending:
+                    body_text += "📅 TAREAS DE HOY:\n"
+                    for idx, t in enumerate(today_pending):
+                        time_lbl = f"({t['time_info']})" if t['time_info'] else "Sin horario"
+                        body_text += f"{idx+1}. {t['description']} - Horario: {time_lbl} | Prioridad: {t['priority']}\n"
+                    body_text += "\n"
+                    
+                if overdue_pending:
+                    body_text += "⚠️ TAREAS ATRASADAS (Días Anteriores):\n"
+                    for idx, t in enumerate(overdue_pending):
+                        time_lbl = f"({t['time_info']})" if t['time_info'] else "Sin horario"
+                        body_text += f"- {t['description']} (del {t['date']}) - {time_lbl}\n"
+                    body_text += "\n"
+                
+                body_text += "Puedes acceder a la aplicación para actualizarlas en Streamlit Cloud.\n\nSaludos,\nEquipo CUADROpz"
+                
+            with st.spinner("Enviando..."):
+                success, msg = send_email(
+                    cfg_srv, cfg_prt, cfg_snd, cfg_pwd, cfg_rcp, 
+                    f"📋 Resumen de tareas pendientes - {today_str}", 
+                    body_text
+                )
+                if success:
+                    st.success("¡Resumen enviado exitosamente!")
+                else:
+                    st.error(msg)
 
 # ----------------- FIXED HEADER -----------------
 st.markdown(
     f"""
     <div class="fixed-header">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 1.8rem; font-weight: 700; color: #0284c7;">📊 CUADROpz</span>
-            <span style="font-size: 1.1rem; color: var(--text-color);">Usuario Activo: <b>{selected_user}</b></span>
+            <span class="gradient-text" style="font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px;">📊 CUADROpz</span>
+            <span style="font-size: 1rem; color: #64748B; font-weight: 500;">Usuario Activo: <b style="color: var(--primary-color);">{selected_user}</b></span>
         </div>
     </div>
     """,
@@ -345,7 +794,7 @@ if undone_days:
                 
                 # Suggestions
                 key = st.session_state.get("openai_api_key", "")
-                suggs = generate_alternatives(key, unresolved)
+                suggs = generate_alternatives(key, unresolved, all_users)
                 
                 # DB Commit
                 finalize_day(selected_user, date_str, resolved, unresolved, suggs)
@@ -438,25 +887,33 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
                 st.session_state["nav_selection"] = "📥 Exportar"
                 st.rerun()
     
-    # 7 Working Days Chart
-    st.markdown("### 📊 Avance de los Últimos 7 Días Hábiles")
+    # ----------------- PLOTLY DASHBOARD CHARTS -----------------
+    st.markdown("### 📊 Gráficos Estadísticos del Dashboard")
     
-    # Get last 7 working days (excluding Sunday)
+    # 1. Determine dynamic theme (dark vs. light) based on Streamlit context
+    plotly_template = "plotly_white"
+    try:
+        if st.context.theme.type == "dark":
+            plotly_template = "plotly_dark"
+    except Exception:
+        plotly_template = "plotly_white"
+
+    # Fetch data for Weekly Evolution (Last 7 working days)
     working_days = []
     check_date = today
     while len(working_days) < 7:
         if check_date.weekday() != 6:  # Skip Sunday
             working_days.append(check_date.strftime("%Y-%m-%d"))
         check_date -= datetime.timedelta(days=1)
-    working_days.reverse()  # Oldest to newest
+    working_days.reverse()
     
     chart_data = []
     has_data = False
     for d_str in working_days:
         d_tasks = get_tasks(selected_user, d_str)
         comp = sum(1 for t in d_tasks if t['completed'] == 1)
-        pend = sum(1 for t in d_tasks if t['completed'] == 0)
-        if len(d_tasks) > 0:
+        total = len(d_tasks)
+        if total > 0:
             has_data = True
             
         d_obj = datetime.datetime.strptime(d_str, "%Y-%m-%d").date()
@@ -465,21 +922,140 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
         
         chart_data.append({
             "Fecha": label,
-            "Completadas": comp,
-            "Pendientes": pend
+            "Tareas Totales": total,
+            "Tareas Completadas": comp
         })
+    df_chart = pd.DataFrame(chart_data)
+
+    # Fetch data for Current Week (Monday to Saturday)
+    monday_diff = today.weekday()
+    monday_date = today - datetime.timedelta(days=monday_diff)
+    week_days_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
+    
+    prod_data = []
+    atrasadas_data = []
+    for i, day_name in enumerate(week_days_es):
+        date_obj = monday_date + datetime.timedelta(days=i)
+        date_str = date_obj.strftime("%Y-%m-%d")
+        tasks = get_tasks(selected_user, date_str)
+        total = len(tasks)
+        comp = sum(1 for t in tasks if t['completed'] == 1)
+        incomplete = sum(1 for t in tasks if t['completed'] == 0)
+        rate = (comp / total * 100) if total > 0 else 0.0
         
-    if has_data:
-        df_chart = pd.DataFrame(chart_data)
-        st.bar_chart(
-            df_chart,
-            x="Fecha",
-            y=["Completadas", "Pendientes"],
-            color=["#22c55e", "#ef4444"], # Green for completed, Red for pending
-            stack=True
+        prod_data.append({
+            "Día": f"{day_name} ({date_obj.strftime('%d/%m')})",
+            "Cumplimiento (%)": round(rate, 1),
+            "Total": total,
+            "Completadas": comp
+        })
+        atrasadas_data.append({
+            "Día": f"{day_name} ({date_obj.strftime('%d/%m')})",
+            "Tareas Incompletas": incomplete
+        })
+    df_prod = pd.DataFrame(prod_data)
+    df_atrasadas = pd.DataFrame(atrasadas_data)
+
+    # Fetch data for Today's Donut Chart
+    today_comp = sum(1 for t in today_tasks if t['completed'] == 1)
+    today_atrasadas = sum(1 for t in today_tasks if t['completed'] == 0 and t['carried_over_from'] is not None and t['carried_over_from'] != "")
+    today_pendientes = len(today_tasks) - today_comp - today_atrasadas
+
+    # Grid Layout: 2 Columns of 2 Charts each
+    col_g1, col_g2 = st.columns(2)
+    col_g3, col_g4 = st.columns(2)
+
+    # Chart 1: Evolución Semanal (Line chart)
+    with col_g1:
+        if has_data:
+            fig_evol = px.line(
+                df_chart, 
+                x="Fecha", 
+                y=["Tareas Totales", "Tareas Completadas"], 
+                markers=True,
+                title="📈 Gráfico 1 - Evolución Semanal (Últimos 7 Días Hábiles)",
+                color_discrete_map={"Tareas Totales": "#1E3A8A", "Tareas Completadas": "#10B981"},
+                labels={"value": "Cantidad de Tareas", "variable": "Métrica"}
+            )
+            fig_evol.update_layout(
+                template=plotly_template,
+                hovermode="x unified",
+                margin=dict(l=20, r=20, t=50, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_evol, use_container_width=True)
+        else:
+            st.info("No se encontraron registros de tareas para la Evolución Semanal.")
+
+    # Chart 2: Estado Actual (Donut chart)
+    with col_g2:
+        if len(today_tasks) > 0:
+            df_donut = pd.DataFrame({
+                "Estado": ["Completadas", "Pendientes", "Atrasadas (Arrastradas)"],
+                "Cantidad": [today_comp, today_pendientes, today_atrasadas]
+            })
+            # Filter out 0 counts to make the pie readable
+            df_donut = df_donut[df_donut["Cantidad"] > 0]
+            
+            fig_donut = px.pie(
+                df_donut, 
+                values="Cantidad", 
+                names="Estado", 
+                hole=0.4,
+                title="🍩 Gráfico 2 - Estado Actual de Hoy",
+                color="Estado",
+                color_discrete_map={
+                    "Completadas": "#10B981",
+                    "Pendientes": "#3B82F6",
+                    "Atrasadas (Arrastradas)": "#F59E0B"
+                }
+            )
+            fig_donut.update_traces(textinfo='percent+value')
+            fig_donut.update_layout(
+                template=plotly_template,
+                margin=dict(l=20, r=20, t=50, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
+            )
+            st.plotly_chart(fig_donut, use_container_width=True)
+        else:
+            st.info("🍩 Tareas de Hoy: Aún no hay tareas programadas para hoy.")
+
+    # Chart 3: Productividad Diaria (Bar Chart, Green)
+    with col_g3:
+        fig_prod = px.bar(
+            df_prod,
+            x="Día",
+            y="Cumplimiento (%)",
+            hover_data=["Total", "Completadas"],
+            text="Cumplimiento (%)",
+            title="🏆 Gráfico 3 - Productividad Diaria (Semana Actual)",
+            color_discrete_sequence=["#10B981"]
         )
-    else:
-        st.info("No se encontraron registros de tareas para los últimos 7 días hábiles.")
+        fig_prod.update_traces(textposition='outside', texttemplate='%{text}%')
+        fig_prod.update_layout(
+            template=plotly_template,
+            yaxis_range=[0, 115],
+            margin=dict(l=20, r=20, t=50, b=20)
+        )
+        st.plotly_chart(fig_prod, use_container_width=True)
+
+    # Chart 4: Tareas Atrasadas (Bar Chart, Amber)
+    with col_g4:
+        fig_atrasadas = px.bar(
+            df_atrasadas,
+            x="Día",
+            y="Tareas Incompletas",
+            text="Tareas Incompletas",
+            title="⏳ Gráfico 4 - Tareas Atrasadas por Día (Semana Actual)",
+            color_discrete_sequence=["#F59E0B"]
+        )
+        fig_atrasadas.update_traces(textposition='outside')
+        fig_atrasadas.update_layout(
+            template=plotly_template,
+            yaxis=dict(dtick=1),
+            margin=dict(l=20, r=20, t=50, b=20)
+        )
+        st.plotly_chart(fig_atrasadas, use_container_width=True)
         
     st.divider()
     
@@ -494,8 +1070,8 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
             time_str = f"🕒 ({t['time_info']})" if t['time_info'] else ""
             prio = t['priority']
             prio_color = ":red[🔴 Alta]" if prio == "Alta" else (":orange[🟠 Media]" if prio == "Media" else (":green[🟢 Baja]" if prio == "Baja" else "⚪ Normal"))
-            # Dark mode friendly orange text color for pending tasks
-            st.markdown(f"**{idx+1}.** <span style='color: #ffb74d; font-weight: 600;'>{t['description']}</span> {time_str} — Prioridad: {prio_color}", unsafe_allow_html=True)
+            # Dark mode friendly warning (amber) text color for pending tasks
+            st.markdown(f"**{idx+1}.** <span style='color: #F59E0B; font-weight: 600;'>{t['description']}</span> {time_str} — Prioridad: {prio_color}", unsafe_allow_html=True)
             
         st.write("")
         if st.button("✏️ Completar actividades en Pizarra", type="primary"):
@@ -637,12 +1213,12 @@ elif st.session_state["nav_selection"] == "📋 Pizarra":
                                     update_task_completion(t_id, 1 if chk_val else 0)
                                     st.rerun()
                             with c_txt:
-                                # High contrast completed (green-crossed) / pending (orange) color overrides
+                                # Accent emerald for completed (green-crossed) / Warning amber for pending (orange) color overrides
                                 if completed:
-                                    st.markdown(f"<span style='color: #4caf50; text-decoration: line-through; font-size: 0.9rem; font-weight: 500;'>{desc}</span>", unsafe_allow_html=True)
+                                    st.markdown(f"<span style='color: #10B981; text-decoration: line-through; font-size: 0.9rem; font-weight: 500;'>{desc}</span>", unsafe_allow_html=True)
                                 else:
                                     carry_lbl = " 🔄" if carried else ""
-                                    st.markdown(f"<span style='color: #ffb74d; font-size: 0.9rem; font-weight: 600;'>{desc}{carry_lbl}</span>", unsafe_allow_html=True)
+                                    st.markdown(f"<span style='color: #F59E0B; font-size: 0.9rem; font-weight: 600;'>{desc}{carry_lbl}</span>", unsafe_allow_html=True)
                                     
                             c_time, c_act = st.columns([2, 1])
                             with c_time:
@@ -700,7 +1276,7 @@ elif st.session_state["nav_selection"] == "📋 Pizarra":
                             unresolved_data = [{'description': t['description'], 'time_info': t['time_info'], 'priority': t['priority']} for t in unresolved_t]
                             
                             key = st.session_state.get("openai_api_key", "")
-                            suggs = generate_alternatives(key, unresolved_data)
+                            suggs = generate_alternatives(key, unresolved_data, all_users)
                             
                             finalize_day(selected_user, target_date_str, resolved_data, unresolved_data, suggs)
                             
@@ -749,7 +1325,7 @@ elif st.session_state["nav_selection"] == "📊 Informes":
                     resolved_data = [{'description': t['description'], 'time_info': t['time_info']} for t in done]
                     unresolved_data = [{'description': t['description'], 'time_info': t['time_info'], 'priority': t['priority']} for t in unresolved_m]
                     key = st.session_state.get("openai_api_key", "")
-                    suggs = generate_alternatives(key, unresolved_data)
+                    suggs = generate_alternatives(key, unresolved_data, all_users)
                     finalize_day(selected_user, date_str, resolved_data, unresolved_data, suggs)
                     st.success("Informe generado.")
                     st.rerun()
@@ -764,8 +1340,24 @@ elif st.session_state["nav_selection"] == "📊 Informes":
             unresolved = rep['unresolved_tasks']
             alts = rep['alternatives_of_solution']
             
-            # Format report section as "ALTERNATIVAS DE SOLUCION" (without "IA")
-            with st.expander(f"📋 Informe: {r_date} | Colaborador: {r_user} ({len(resolved)} cumplidas / {len(unresolved)} pendientes)"):
+            with st.container(border=True):
+                # Anchor to style the container as a report-card
+                st.markdown('<div class="report-card-anchor"></div>', unsafe_allow_html=True)
+                
+                # Report metadata in separate lines
+                st.markdown(f'<div class="report-date">📅 Fecha: {r_date}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="report-user">👤 Colaborador: {r_user}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="report-stats">'
+                    f'<span class="report-completed">✓ {len(resolved)} cumplidas</span>'
+                    f' &nbsp;|&nbsp; '
+                    f'<span class="report-pending">✗ {len(unresolved)} pendientes</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                
+                st.divider()
+                
                 col_l1, col_l2 = st.columns(2)
                 with col_l1:
                     st.markdown(":green[**Actividades Resueltas**]")
@@ -791,12 +1383,12 @@ elif st.session_state["nav_selection"] == "📊 Informes":
                     st.write("No se requirieron sugerencias.")
                 else:
                     for idx, t in enumerate(unresolved):
-                        suggestion = alts[idx] if idx < len(alts) else "Reagendar para mañana."
+                        suggestion = alts[idx] if idx < len(alts) else {"prioridad": "Media", "reasignacion_sugerida": "", "alternativa_solucion": "Reagendar para mañana."}
                         st.markdown(f"* **Actividad:** {t['description']}")
                         
                         col_sug_text, col_sug_btn = st.columns([6, 1])
                         with col_sug_text:
-                            st.info(f"💡 Sugerencia: {suggestion}")
+                            render_solution_suggestion(suggestion)
                         with col_sug_btn:
                             st.write("") # vertical spacing
                             if st.button("🔄 Regenerar", key=f"regen_{rep['id']}_{idx}", width="stretch"):
@@ -805,11 +1397,11 @@ elif st.session_state["nav_selection"] == "📊 Informes":
                                     st.warning("No se puede regenerar sin clave API de OpenAI")
                                 else:
                                     with st.spinner("Regenerando sugerencia..."):
-                                        new_sug = generate_single_alternative(key, t['description'], suggestion)
+                                        new_sug = generate_single_alternative(key, t['description'], suggestion, all_users)
                                         if new_sug:
                                             updated_alts = list(alts)
                                             while len(updated_alts) <= idx:
-                                                updated_alts.append("Reagendar para mañana.")
+                                                updated_alts.append({"prioridad": "Media", "reasignacion_sugerida": "", "alternativa_solucion": "Reagendar para mañana."})
                                             updated_alts[idx] = new_sug
                                             update_report_suggestions(rep['id'], updated_alts)
                                             st.success("Sugerencia regenerada con éxito.")
@@ -929,11 +1521,11 @@ elif st.session_state["nav_selection"] == "📅 Calendario":
             prio = pt['priority']
             time_info = pt['time_info'] or "Sin horario"
             
-            # Use high-contrast status colors in Dark Mode
+            # Use high-contrast status colors: emerald for completed, amber for pending
             if completed:
-                st.markdown(f"✅ <span style='color: #4caf50; text-decoration: line-through;'>{pt['description']}</span> *({time_info})* - Prioridad: **{prio}**", unsafe_allow_html=True)
+                st.markdown(f"✅ <span style='color: #10B981; text-decoration: line-through;'>{pt['description']}</span> *({time_info})* - Prioridad: **{prio}**", unsafe_allow_html=True)
             else:
-                st.markdown(f"⏳ <span style='color: #ffb74d; font-weight: 600;'>{pt['description']}</span> *({time_info})* - Prioridad: **{prio}**", unsafe_allow_html=True)
+                st.markdown(f"⏳ <span style='color: #F59E0B; font-weight: 600;'>{pt['description']}</span> *({time_info})* - Prioridad: **{prio}**", unsafe_allow_html=True)
 
 
 # ----------------- FLOATING ALERTS & NOTIFICATIONS CENTER (FAB) -----------------
