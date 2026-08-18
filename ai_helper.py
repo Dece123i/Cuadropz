@@ -1,17 +1,26 @@
 import os
 import re
 import json
-from openai import OpenAI
+import google.generativeai as genai
+from google.genai import Client as GenAIClient
+from google.genai import types
+
+# Custom Client class to satisfy both legacy genai.configure and the new GenAI Client wrapper
+class CustomGenAIClient(GenAIClient):
+    def __init__(self, *args, **kwargs):
+        api_key = kwargs.get("api_key") or getattr(genai, "api_key", None)
+        if not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY", "")
+        kwargs["api_key"] = api_key
+        super().__init__(*args, **kwargs)
+
+genai.Client = CustomGenAIClient
 
 def generate_alternatives(api_key, unresolved_tasks, team_members=None):
     """
-    Generates alternative solutions, priorities, and reassignments for a list of unresolved tasks.
-    If api_key is not provided or empty, or if the OpenAI call fails, 
+    Generates alternative solutions, priorities, and reassignments for a list of unresolved tasks using Gemini 3.6.
+    If api_key is not provided or empty, or if the Gemini call fails, 
     it falls back to a smart, rule-based suggestion engine.
-    
-    unresolved_tasks: List of dicts, each with 'description', 'time_info', etc.
-    team_members: List of names of available team members.
-    Returns: List of dicts, where each dict has 'prioridad', 'reasignacion_sugerida', 'alternativa_solucion'.
     """
     if not unresolved_tasks:
         return []
@@ -19,18 +28,18 @@ def generate_alternatives(api_key, unresolved_tasks, team_members=None):
     members_str = ", ".join(team_members) if team_members else "MARY CRUZ, CPC.SHEYLA, CPC.HECTOR"
     suggestions = []
     
-    # Check if we can use OpenAI
-    use_openai = False
-    client = None
+    # Check if we can use Gemini
+    use_gemini = False
     if api_key and str(api_key).strip():
         try:
-            client = OpenAI(api_key=api_key.strip())
-            use_openai = True
+            genai.configure(api_key=api_key.strip())
+            use_gemini = True
         except Exception as e:
-            print("Error initializing OpenAI client:", e)
+            print("Error configuring Gemini:", e)
             
-    if use_openai and client:
+    if use_gemini:
         try:
+            client = genai.Client(http_options={'api_version': 'v1'})
             tasks_str = "\n".join([f"{i+1}. Tarea: {task['description']} (Horario: {task.get('time_info') or 'No especificado'})" 
                                    for i, task in enumerate(unresolved_tasks)])
             
@@ -55,17 +64,16 @@ def generate_alternatives(api_key, unresolved_tasks, team_members=None):
                 f"Lista de tareas no resueltas:\n{tasks_str}"
             )
             
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Eres un consultor empresarial senior que responde únicamente en formato JSON (arreglo de objetos)."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1500
+            response = client.models.generate_content(
+                model='gemini-3.1-flash-lite',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction="Eres un consultor empresarial senior que responde únicamente en formato JSON (arreglo de objetos).",
+                    temperature=0.7
+                )
             )
+            content = response.text.strip()
             
-            content = response.choices[0].message.content.strip()
             if content.startswith("```json"):
                 content = content[7:]
             if content.endswith("```"):
@@ -90,9 +98,9 @@ def generate_alternatives(api_key, unresolved_tasks, team_members=None):
                         })
                 return cleaned
             else:
-                print("OpenAI response size mismatch or invalid structure, falling back to rule-based engine.")
+                print("Gemini response size mismatch or invalid structure, falling back to rule-based engine.")
         except Exception as e:
-            print("OpenAI API execution error:", e, "- falling back to rule-based engine.")
+            print("Gemini API execution error:", e, "- falling back to rule-based engine.")
             
     # Fallback Rule-Based Engine
     for task in unresolved_tasks:
@@ -137,7 +145,7 @@ def generate_alternatives(api_key, unresolved_tasks, team_members=None):
 
 def generate_single_alternative(api_key, task_desc, previous_suggestion=None, team_members=None):
     """
-    Generates a single alternative solution for a task returning a JSON object.
+    Generates a single alternative solution for a task returning a JSON object using Gemini 3.6.
     """
     members_str = ", ".join(team_members) if team_members else "MARY CRUZ, CPC.SHEYLA, CPC.HECTOR"
     
@@ -149,7 +157,8 @@ def generate_single_alternative(api_key, task_desc, previous_suggestion=None, te
         }
         
     try:
-        client = OpenAI(api_key=api_key.strip())
+        genai.configure(api_key=api_key.strip())
+        client = genai.Client(http_options={'api_version': 'v1'})
         
         prompt = (
             "Eres un experto senior en gestión de proyectos y administración de empresas.\n"
@@ -172,17 +181,16 @@ def generate_single_alternative(api_key, task_desc, previous_suggestion=None, te
             "No agregues bloques de código, introducciones ni explicaciones adicionales fuera del JSON."
         )
         
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Eres un consultor empresarial senior que responde únicamente en formato JSON (un solo objeto)."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=500
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="Eres un consultor empresarial senior que responde únicamente en formato JSON (un solo objeto).",
+                temperature=0.7
+            )
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.text.strip()
         if content.startswith("```json"):
             content = content[7:]
         if content.endswith("```"):

@@ -21,6 +21,22 @@ from ai_helper import generate_alternatives, generate_single_alternative
 from excel_helper import export_weekly_tasks_to_excel, get_week_dates
 from email_helper import send_email, load_email_config, save_email_config
 
+import google.generativeai as genai
+from google.genai import Client as GenAIClient
+from google.genai import types
+
+class CustomGenAIClient(GenAIClient):
+    def __init__(self, *args, **kwargs):
+        api_key = kwargs.get("api_key") or getattr(genai, "api_key", None)
+        if not api_key:
+            api_key = st.session_state.get("gemini_api_key", "")
+        if not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY", "")
+        kwargs["api_key"] = api_key
+        super().__init__(*args, **kwargs)
+
+genai.Client = CustomGenAIClient
+
 # Initialize database and import data
 db_init()
 excel_file = "Excel de datos pizarra - copia.xlsx"
@@ -50,7 +66,7 @@ total_notifications = len(today_pending_tasks) + len(overdue_pending_tasks)
 badge_css = ""
 if total_notifications > 0:
     badge_css = f"""
-    div[data-testid="stPopover"] > button::after {{
+    div:has(#alerts-popover-anchor) + div div[data-testid="stPopover"] > button::after {{
         content: "{total_notifications}" !important;
         position: absolute !important;
         top: 2px !important;
@@ -65,7 +81,7 @@ if total_notifications > 0:
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        border: 2px solid #1f77b4 !important;
+        border: 2px solid #64748B !important;
     }}
     """
 
@@ -335,20 +351,65 @@ st.markdown(f"""
         background-color: var(--card-bg) !important;
     }}
     
-    /* Popover FAB Button styling (Always Blue/Deep Blue) */
-    div[data-testid="stPopover"] {{
+    /* Botón flotante del asistente - siempre visible */
+    div[data-testid="stPopover"], div[data-testid="stPopover"] > div {{
         position: fixed !important;
         bottom: 30px !important;
         right: 30px !important;
-        z-index: 9999 !important;
+        width: 60px !important;
+        height: 60px !important;
+        z-index: 999999 !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }}
-    div[data-testid="stPopover"] button {{
+
+    div[data-testid="stPopover"] button, div[data-testid="stPopover"] > button {{
+        border-radius: 50% !important;
+        width: 60px !important;
+        height: 60px !important;
+        background-color: #ffffff !important;
+        color: #1E3A8A !important;
+        border: 2px solid #1E3A8A !important;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.15) !important;
+        font-size: 28px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        transition: all 0.3s ease !important;
+    }}
+
+    div[data-testid="stPopover"] button:hover, div[data-testid="stPopover"] > button:hover {{
+        transform: scale(1.08) !important;
+        box-shadow: 0 6px 20px rgba(30, 58, 138, 0.3) !important;
+    }}
+
+    /* Contenido del popover */
+    div[data-testid="stPopover"] div[data-testid="stPopoverBody"] {{
+        position: absolute !important;
+        bottom: 74px !important;
+        right: 0px !important;
+        width: 380px !important;
+        max-height: 500px !important;
+        overflow-y: auto !important;
+        border-radius: 16px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2) !important;
+        border: 1px solid #e5e7eb !important;
+        background-color: var(--card-bg, #ffffff) !important;
+    }}
+
+    /* Estilo Alerts Popover (🔔) a la izquierda del chatbot */
+    div:has(#alerts-popover-anchor) + div div[data-testid="stPopover"],
+    div:has(#alerts-popover-anchor) + div div[data-testid="stPopover"] > div {{
+        right: 105px !important;
+    }}
+    div:has(#alerts-popover-anchor) + div div[data-testid="stPopover"] button {{
         border-radius: 50% !important;
         width: 60px !important;
         height: 60px !important;
         font-size: 24px !important;
-        box-shadow: 0 4px 14px rgba(30, 58, 138, 0.3) !important;
-        background-color: var(--primary-color) !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+        background-color: #64748B !important;
         color: white !important;
         border: none !important;
         display: flex !important;
@@ -357,22 +418,10 @@ st.markdown(f"""
         position: relative !important;
         transition: all 0.3s ease !important;
     }}
-    div[data-testid="stPopover"] button:hover {{
+    div:has(#alerts-popover-anchor) + div div[data-testid="stPopover"] button:hover {{
         transform: scale(1.08) !important;
-        background-color: var(--secondary-color) !important;
-        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5) !important;
-    }}
-    div[data-testid="stPopover"] div[data-testid="stPopoverBody"] {{
-        position: absolute !important;
-        bottom: 74px !important;
-        right: 0px !important;
-        width: 340px !important;
-        max-height: 480px !important;
-        overflow-y: auto !important;
-        border-radius: 16px !important;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
-        border: 1px solid var(--card-border) !important;
-        background-color: var(--card-bg) !important;
+        background-color: #475569 !important;
+        box-shadow: 0 6px 20px rgba(71, 85, 105, 0.4) !important;
     }}
     
     {badge_css}
@@ -656,10 +705,10 @@ with st.sidebar:
     # 5. CONFIGURACIÓN DE IA (Cuarta posición)
     with st.expander("⚙️ Configuración de IA", expanded=False):
         st.text_input(
-            "Clave API de OpenAI:",
+            "Clave API de Gemini:",
             type="password",
-            key="openai_api_key",
-            placeholder="sk-...",
+            key="gemini_api_key",
+            placeholder="AIzaSy...",
         )
         st.caption("Opcional: necesario para regenerar sugerencias")
         
@@ -793,7 +842,7 @@ if undone_days:
                 unresolved = [{'description': t['description'], 'time_info': t['time_info'], 'priority': t['priority']} for t in unresolved_tasks]
                 
                 # Suggestions
-                key = st.session_state.get("openai_api_key", "")
+                key = st.session_state.get("gemini_api_key", "")
                 suggs = generate_alternatives(key, unresolved, all_users)
                 
                 # DB Commit
@@ -1078,7 +1127,6 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
             st.session_state["nav_selection"] = "📋 Pizarra"
             st.rerun()
 
-
 # ----------------- PAGE: PIZARRA (WEEKLY BOARD VIEW) -----------------
 elif st.session_state["nav_selection"] == "📋 Pizarra":
     # Snap selected date to Monday
@@ -1275,7 +1323,7 @@ elif st.session_state["nav_selection"] == "📋 Pizarra":
                             resolved_data = [{'description': t['description'], 'time_info': t['time_info']} for t in resolved_t]
                             unresolved_data = [{'description': t['description'], 'time_info': t['time_info'], 'priority': t['priority']} for t in unresolved_t]
                             
-                            key = st.session_state.get("openai_api_key", "")
+                            key = st.session_state.get("gemini_api_key", "")
                             suggs = generate_alternatives(key, unresolved_data, all_users)
                             
                             finalize_day(selected_user, target_date_str, resolved_data, unresolved_data, suggs)
@@ -1324,7 +1372,7 @@ elif st.session_state["nav_selection"] == "📊 Informes":
                 if st.button("Generar Informe del Día", type="primary", use_container_width=True):
                     resolved_data = [{'description': t['description'], 'time_info': t['time_info']} for t in done]
                     unresolved_data = [{'description': t['description'], 'time_info': t['time_info'], 'priority': t['priority']} for t in unresolved_m]
-                    key = st.session_state.get("openai_api_key", "")
+                    key = st.session_state.get("gemini_api_key", "")
                     suggs = generate_alternatives(key, unresolved_data, all_users)
                     finalize_day(selected_user, date_str, resolved_data, unresolved_data, suggs)
                     st.success("Informe generado.")
@@ -1392,9 +1440,9 @@ elif st.session_state["nav_selection"] == "📊 Informes":
                         with col_sug_btn:
                             st.write("") # vertical spacing
                             if st.button("🔄 Regenerar", key=f"regen_{rep['id']}_{idx}", width="stretch"):
-                                key = st.session_state.get("openai_api_key", "")
+                                key = st.session_state.get("gemini_api_key", "")
                                 if not key or not key.strip():
-                                    st.warning("No se puede regenerar sin clave API de OpenAI")
+                                    st.warning("No se puede regenerar sin clave API de Gemini")
                                 else:
                                     with st.spinner("Regenerando sugerencia..."):
                                         new_sug = generate_single_alternative(key, t['description'], suggestion, all_users)
@@ -1598,7 +1646,7 @@ else:
 # FAB label displaying a notification bell (badge handled by CSS)
 fab_label = "🔔"
 
-st.markdown("<div id='floating-fab-anchor'></div>", unsafe_allow_html=True)
+st.markdown("<div id='alerts-popover-anchor'></div>", unsafe_allow_html=True)
 with st.popover(fab_label):
     st.markdown("### 🔔 Centro de Alertas y Notificaciones")
     st.markdown(f"**Usuario:** `{selected_user}`")
@@ -1650,3 +1698,148 @@ with st.popover(fab_label):
     # 3. Sugerencias automáticas
     st.markdown("**💡 Sugerencia del Sistema:**")
     st.info(suggestion_msg)
+
+# ----------------- GLOBAL AI CHAT ASSISTANT (FAB) -----------------
+# Initialize chatbot messages history in session state
+if "assistant_messages" not in st.session_state:
+    st.session_state["assistant_messages"] = [
+        {"role": "assistant", "content": "Hola, soy tu asistente de CUADROpz. ¿En qué puedo ayudarte hoy?"}
+    ]
+    
+# Get Gemini API key safely from state or secrets
+gemini_key = st.session_state.get("gemini_api_key", "")
+if not gemini_key or not gemini_key.strip():
+    import os
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+if not gemini_key or not gemini_key.strip():
+    try:
+        gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:
+        pass
+        
+# Gather chatbot context data
+u_active = st.session_state.get("current_user", "MARY CRUZ")
+today_tasks_list = get_tasks(u_active, today_str)
+completed_list = [t for t in today_tasks_list if t['completed'] == 1]
+pending_list = [t for t in today_tasks_list if t['completed'] == 0]
+overdue_count = len(get_overdue_pending_tasks(u_active, today_str))
+
+completed_str = "\n".join([f"- {t['description']} (Horario: {t.get('time_info') or 'No especificado'})" for t in completed_list]) if completed_list else "Ninguna"
+pending_str = "\n".join([f"- {t['description']} (Horario: {t.get('time_info') or 'No especificado'})" for t in pending_list]) if pending_list else "Ninguna"
+
+system_prompt = (
+    "Eres un asistente inteligente integrado en la aplicación 'CUADROpz' (Control de Producción).\n"
+    f"Usuario activo actual: {u_active}\n"
+    f"Fecha de hoy: {today_str}\n\n"
+    "--- CONTEXTO DE HOY ---\n"
+    f"Tareas completadas hoy:\n{completed_str}\n\n"
+    f"Tareas pendientes de hoy:\n{pending_str}\n\n"
+    f"Tareas atrasadas acumuladas de días anteriores: {overdue_count}\n"
+    "------------------------\n\n"
+    "Responde las consultas del usuario basándote en este contexto. Sé profesional, conciso y de gran ayuda en la gestión de sus tareas."
+)
+
+st.markdown("<div id='chat-popover-anchor'></div>", unsafe_allow_html=True)
+with st.popover("", icon=":material/chat:"):
+    st.markdown("### 💬 Asistente Virtual")
+    st.caption("Resuelve dudas sobre tus tareas de hoy")
+    
+    # Display history
+    for msg in st.session_state["assistant_messages"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+    # Show suggestions if history has <= 1 message (only the welcome message)
+    if len(st.session_state["assistant_messages"]) <= 1:
+        st.markdown("**Preguntas sugeridas:**")
+        suggestions = [
+            "¿Qué tareas tengo pendientes hoy?",
+            "¿Cuáles son mis tareas más urgentes?",
+            "¿Cuántas tareas he completado esta semana?",
+            "¿Qué tareas tengo atrasadas?",
+            "¿Cómo puedo priorizar mis tareas?",
+            "¿Cuál es mi productividad de esta semana?",
+            "¿Cómo uso la pizarra?",
+            "¿Cómo genero un informe?",
+            "¿Cómo exporto a Excel?"
+        ]
+        for sugg in suggestions:
+            if st.button(sugg, key=f"sugg_btn_{sugg}", use_container_width=True):
+                st.session_state["assistant_messages"].append({"role": "user", "content": sugg})
+                if not gemini_key or not gemini_key.strip():
+                    st.session_state["assistant_messages"].append({
+                        "role": "assistant",
+                        "content": "Configura la clave API en la barra lateral para usar el asistente."
+                    })
+                else:
+                    with st.spinner("Pensando..."):
+                        try:
+                            genai.configure(api_key=gemini_key.strip())
+                            client = genai.Client(http_options={'api_version': 'v1'})
+                            
+                            # Build chat history for Gemini
+                            history = []
+                            for h_msg in st.session_state["assistant_messages"][:-1]:
+                                role_map = "user" if h_msg["role"] == "user" else "model"
+                                history.append(types.Content(role=role_map, parts=[types.Part(text=h_msg["content"])]))
+                                
+                            chat = client.chats.create(
+                                model='gemini-3.1-flash-lite',
+                                history=history,
+                                config=types.GenerateContentConfig(
+                                    system_instruction=system_prompt,
+                                    temperature=0.7
+                                )
+                            )
+                            response = chat.send_message(sugg)
+                            assistant_response = response.text
+                            
+                            st.session_state["assistant_messages"].append({"role": "assistant", "content": assistant_response})
+                        except Exception as e:
+                            st.session_state["assistant_messages"].append({
+                                "role": "assistant",
+                                "content": f"Error al conectar con la IA: {str(e)}"
+                            })
+                st.rerun()
+            
+    # Chat input
+    if prompt := st.chat_input("Escribe tu consulta aquí...", key="global_chat_input"):
+        # Display user message in chat message container
+        st.session_state["assistant_messages"].append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            
+        # Call Gemini API
+        if not gemini_key or not gemini_key.strip():
+            with st.chat_message("assistant"):
+                st.error("Configura la clave API en la barra lateral para usar el asistente.")
+        else:
+            with st.spinner("Pensando..."):
+                try:
+                    genai.configure(api_key=gemini_key.strip())
+                    client = genai.Client(http_options={'api_version': 'v1'})
+                    
+                    # Build chat history for Gemini
+                    history = []
+                    for h_msg in st.session_state["assistant_messages"][:-1]:
+                        role_map = "user" if h_msg["role"] == "user" else "model"
+                        history.append(types.Content(role=role_map, parts=[types.Part(text=h_msg["content"])]))
+                        
+                    chat = client.chats.create(
+                        model='gemini-3.1-flash-lite',
+                        history=history,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=0.7
+                        )
+                    )
+                    response = chat.send_message(prompt)
+                    assistant_response = response.text
+                    
+                    st.session_state["assistant_messages"].append({"role": "assistant", "content": assistant_response})
+                    
+                    # Re-run to update UI with history
+                    st.rerun()
+                except Exception as e:
+                    with st.chat_message("assistant"):
+                        st.error(f"Error al conectar con la IA: {str(e)}")
