@@ -12,7 +12,9 @@ from database import (
     get_undone_days_before, finalize_day, get_reports, get_days_with_pending_tasks,
     get_users, add_user, delete_user, get_overdue_pending_tasks,
     get_tasks_by_user_and_date, get_completed_tasks_count, get_last_report,
-    get_last_export_info, save_last_export_info, update_report_suggestions
+    get_last_export_info, save_last_export_info, update_report_suggestions,
+    get_all_users_with_admin_status, toggle_admin_status, delete_user_by_admin,
+    add_user_with_role
 )
 import importlib
 import ai_helper
@@ -104,11 +106,11 @@ st.markdown(f"""
         --secondary-color: #3B82F6;
         --accent-color: #10B981;
         --warning-color: #F59E0B;
-        --bg-color: #F8FAFC;
+        --bg-color: #f0f4f8;
         --text-color: #1E293B;
         --card-bg: #FFFFFF;
         --card-border: #E2E8F0;
-        --column-bg: #FFFFFF;
+        --column-bg: #F5F0E8;
         --column-border: #E2E8F0;
         --sidebar-bg: #FFFFFF;
         --sidebar-text: #1E293B;
@@ -171,7 +173,7 @@ st.markdown(f"""
     div[data-testid="stVerticalBlockBorderWrapper"] {{
         background-color: var(--card-bg) !important;
         border: 1px solid var(--card-border) !important;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.08) !important;
         border-radius: 16px !important;
         padding: 24px !important;
         transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important;
@@ -180,8 +182,13 @@ st.markdown(f"""
     
     div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
         transform: translateY(-4px) !important;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.12) !important;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.12) !important;
         border-color: var(--secondary-color) !important;
+    }}
+    
+    /* Fondo blanco para las tarjetas del dashboard */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background-color: #FFFFFF !important;
     }}
     
     /* Remove card inner margin padding override to look neat */
@@ -189,13 +196,25 @@ st.markdown(f"""
         padding: 0 !important;
     }}
     
-    /* Columns styling */
+    /* Fondo arena para las columnas de la pizarra */
     div[data-testid="column"] {{
-        background-color: var(--column-bg) !important;
-        border: 1px solid var(--column-border) !important;
-        border-radius: 16px !important;
+        background-color: #F5F0E8 !important;
+        border-radius: 12px !important;
         padding: 16px !important;
         transition: background-color 0.3s ease, border-color 0.3s ease !important;
+    }}
+    
+    /* Si el selector anterior no funciona, prueba con este más agresivo */
+    div[data-testid="stVerticalBlock"] > div[data-testid="column"] {{
+        background-color: #F5F0E8 !important;
+        border-radius: 12px !important;
+        padding: 16px !important;
+    }}
+    
+    /* Para modo oscuro, también aplicamos el color arena */
+    [data-theme="dark"] div[data-testid="column"] {{
+        background-color: #F5F0E8 !important;
+        border-color: #F5F0E8 !important;
     }}
     
     /* Button styles */
@@ -506,6 +525,102 @@ st.markdown(f"""
     .report-pending {{
         color: #F59E0B !important;
     }}
+
+    /* Anchors for Dashboard Cards Left Border Colors */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pizarra-card-anchor) {{
+        border-left: 4px solid #10b981 !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.informes-card-anchor) {{
+        border-left: 4px solid #3b82f6 !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.exportar-card-anchor) {{
+        border-left: 4px solid #f59e0b !important;
+    }}
+    
+    /* Metric layout adjustments inside dashboard cards */
+    .card-metric-container {{
+        margin: 16px 0;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }}
+    .card-metric-val {{
+        font-size: 2.2rem;
+        font-weight: 800;
+        line-height: 1;
+    }}
+    .card-metric-lbl {{
+        font-size: 0.95rem;
+        color: #64748B;
+        font-weight: 500;
+    }}
+    [data-theme="dark"] .card-metric-lbl {{
+        color: #94A3B8;
+    }}
+    
+    /* Metrics coloring for completed vs pending */
+    div[data-testid="column"]:has(.metric-pendientes) div[data-testid="stMetricValue"] {{
+        color: #f59e0b !important;
+    }}
+    div[data-testid="column"]:has(.metric-completadas) div[data-testid="stMetricValue"] {{
+        color: #10b981 !important;
+    }}
+    
+    /* Global metric font-size increase */
+    div[data-testid="stMetricValue"] {{
+        font-size: 2.2rem !important;
+        font-weight: 800 !important;
+    }}
+
+    /* Reset styling for nested columns inside pizarra task containers */
+    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] {{
+        background-color: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }}
+    
+    /* Adjust spacing for buttons inside task container columns */
+    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] button {{
+        margin-right: 8px !important;
+    }}
+    
+    /* Compact padding of the task cards inside the pizarra board */
+    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlockBorderWrapper"] {{
+        padding: 12px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+    }}
+
+    /* Estilo de tarjetas personalizadas HTML del Dashboard */
+    .custom-card {{
+        background-color: #FFFFFF !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+        margin-bottom: 16px !important;
+        border: 1px solid #E2E8F0 !important;
+    }}
+    .custom-card.pizarra {{
+        border-left: 4px solid #10b981 !important;
+    }}
+    .custom-card.informes {{
+        border-left: 4px solid #3b82f6 !important;
+    }}
+    .custom-card.exportar {{
+        border-left: 4px solid #f59e0b !important;
+    }}
+    
+    /* Estilo mejorado para los botones del dashboard */
+    div[data-testid="element-container"]:has(.custom-card.pizarra) + div[data-testid="element-container"] button,
+    div[data-testid="element-container"]:has(.custom-card.informes) + div[data-testid="element-container"] button,
+    div[data-testid="element-container"]:has(.custom-card.exportar) + div[data-testid="element-container"] button {{
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+        border: 2px solid #1E3A8A !important;
+        padding: 10px 24px !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -601,6 +716,9 @@ def render_solution_suggestion(suggestion):
         st.info(f"💡 Sugerencia de Solución:\n{suggestion}")
 
 # ----------------- SESSION STATE INIT -----------------
+if "admin_mode" not in st.session_state:
+    st.session_state["admin_mode"] = False
+
 if "nav_selection" not in st.session_state:
     st.session_state["nav_selection"] = "🏠 Inicio"  # Default active page is Inicio on startup
 
@@ -645,6 +763,9 @@ with st.sidebar:
         "📥 Exportar",
         "📅 Calendario"
     ]
+    if st.session_state.get("admin_mode", False):
+        nav_options.append("👑 Admin")
+        
     st.markdown("**Navegación:**")
     current_sel = st.session_state.get("nav_selection", "🏠 Inicio")
     for opt in nav_options:
@@ -665,97 +786,14 @@ with st.sidebar:
         pending_count = len([t for t in today_tasks if t['completed'] == 0])
         
         col_stat1, col_stat2 = st.columns(2)
-        col_stat1.metric("⏳ Pendientes", pending_count)
-        col_stat2.metric("✅ Completadas", completed_count)
+        with col_stat1:
+            st.markdown('<div class="metric-pendientes"></div>', unsafe_allow_html=True)
+            st.metric("⏳ Pendientes", pending_count)
+        with col_stat2:
+            st.markdown('<div class="metric-completadas"></div>', unsafe_allow_html=True)
+            st.metric("✅ Completadas", completed_count)
         
     st.markdown("---")
-    
-    # 4. GESTIÓN DE USUARIOS (Tercera posición)
-    with st.expander("👥 Gestión de Usuarios", expanded=False):
-        st.markdown("**Nuevo Usuario:**")
-        new_name = st.text_input("Nombre colaborador:", key="new_user_name_input")
-        
-        col_user_actions = st.columns(2)
-        with col_user_actions[0]:
-            if st.button("Agregar", key="add_user_btn", use_container_width=True):
-                if new_name.strip():
-                    if add_user(new_name.strip()):
-                        st.success(f"Creado: {new_name}")
-                        st.session_state["current_user"] = new_name.strip()
-                        st.rerun()
-                    else:
-                        st.error("Ya existe")
-                else:
-                    st.error("Vacío")
-        with col_user_actions[1]:
-            if st.button("Eliminar", key="delete_user_btn_sidebar", use_container_width=True):
-                user_to_del = selected_user
-                if user_to_del == st.session_state.get("current_user"):
-                    st.warning("No puedes eliminarte")
-                else:
-                    if delete_user(user_to_del):
-                        st.success(f"Eliminado: {user_to_del}")
-                        all_users = get_users()
-                        if all_users:
-                            st.session_state["current_user"] = all_users[0]
-                        st.rerun()
-                    else:
-                        st.error("Error")
-                        
-    # 5. CONFIGURACIÓN DE IA (Cuarta posición)
-    with st.expander("⚙️ Configuración de IA", expanded=False):
-        st.text_input(
-            "Clave API de Gemini:",
-            type="password",
-            key="gemini_api_key",
-            placeholder="AIzaSy...",
-        )
-        st.caption("Opcional: necesario para regenerar sugerencias")
-        
-    # 6. CONFIGURACIÓN DE CORREO (Quinta posición)
-    with st.expander("📧 Configuración de Correo", expanded=False):
-        smtp_server = st.text_input("Servidor SMTP:", value=email_config.get("smtp_server", "smtp.gmail.com"), key="sidebar_smtp_server")
-        smtp_port = st.text_input("Puerto SMTP:", value=email_config.get("smtp_port", "587"), key="sidebar_smtp_port")
-        sender_email = st.text_input("Correo Emisor:", value=email_config.get("sender_email", ""), key="sidebar_sender_email", placeholder="tu@gmail.com")
-        sender_password = st.text_input("Contraseña de Aplicación:", value=email_config.get("sender_password", ""), type="password", key="sidebar_sender_password", placeholder="xxxx xxxx")
-        recipient_email = st.text_input("Correo Destinatario:", value=email_config.get("recipient_email", ""), key="sidebar_recipient_email", placeholder="destinatario@gmail.com")
-        
-        auto_send_enabled = st.checkbox("Activar recordatorio (8:00 AM)", value=email_config.get("auto_send_enabled", False), key="sidebar_auto_send_enabled")
-        
-        col_email_btn1, col_email_btn2 = st.columns(2)
-        with col_email_btn1:
-            if st.button("💾 Guardar", key="save_email_config_btn", use_container_width=True):
-                new_cfg = {
-                    "smtp_server": smtp_server,
-                    "smtp_port": smtp_port,
-                    "sender_email": sender_email,
-                    "sender_password": sender_password,
-                    "recipient_email": recipient_email,
-                    "auto_send_enabled": auto_send_enabled,
-                    "last_sent_date": email_config.get("last_sent_date", "")
-                }
-                if save_email_config(new_cfg):
-                    st.success("Guardado")
-                    email_config = new_cfg
-                else:
-                    st.error("Error")
-        with col_email_btn2:
-            if st.button("🧪 Probar", key="test_email_btn", use_container_width=True):
-                if not sender_email or not sender_password or not recipient_email:
-                    st.warning("Faltan datos")
-                else:
-                    with st.spinner("Enviando..."):
-                        success, msg = send_email(
-                            smtp_server, smtp_port, sender_email, sender_password, 
-                            recipient_email, "🧪 Correo de prueba - CUADROpz", 
-                            "Este es un correo de prueba de CUADROpz para validar tu configuración SMTP."
-                        )
-                        if success:
-                            st.success("¡Enviado!")
-                        else:
-                            st.error(msg)
-                            
-    st.divider()
     
     # Button to send daily summary manually
     if st.button("📧 Enviar Resumen de Hoy", key="send_today_summary_btn_manual", use_container_width=True):
@@ -766,7 +804,7 @@ with st.sidebar:
         cfg_rcp = email_config.get("recipient_email", "")
         
         if not cfg_snd or not cfg_pwd or not cfg_rcp:
-            st.error("Por favor completa las credenciales de correo en el panel lateral.")
+            st.error("Por favor completa las credenciales de correo en el panel de administración.")
         else:
             today_pending = [t for t in get_tasks(st.session_state.get("current_user", "MARY CRUZ"), today_str) if t['completed'] == 0]
             overdue_pending = get_overdue_pending_tasks(st.session_state.get("current_user", "MARY CRUZ"), today_str)
@@ -802,6 +840,39 @@ with st.sidebar:
                     st.success("¡Resumen enviado exitosamente!")
                 else:
                     st.error(msg)
+                    
+    st.divider()
+    
+    # Admin Mode Toggle at the bottom of the sidebar
+    @st.dialog("Activar Modo Admin")
+    def enter_admin_mode_dialog():
+        st.write("Por favor, ingrese la contraseña de administrador:")
+        password_input = st.text_input("Contraseña", type="password", key="admin_password_dialog_input")
+        if st.button("Confirmar", type="primary", use_container_width=True, key="confirm_admin_pwd_btn"):
+            admin_pwd = "admin123"
+            try:
+                if "ADMIN_PASSWORD" in st.secrets:
+                    admin_pwd = st.secrets["ADMIN_PASSWORD"]
+            except Exception:
+                pass
+            
+            if password_input == admin_pwd:
+                st.session_state["admin_mode"] = True
+                st.success("Modo Admin activado.")
+                st.rerun()
+            else:
+                st.error("Contraseña incorrecta.")
+
+    if not st.session_state.get("admin_mode", False):
+        if st.button("👑 Modo Admin", type="secondary", use_container_width=True, key="activate_admin_mode_btn"):
+            enter_admin_mode_dialog()
+    else:
+        st.markdown("<p style='color: #10B981; font-weight: bold; margin-bottom: 5px; text-align: center;'>🟢 Modo Admin Activo</p>", unsafe_allow_html=True)
+        if st.button("🔒 Desactivar Modo Admin", type="secondary", use_container_width=True, key="deactivate_admin_mode_btn"):
+            st.session_state["admin_mode"] = False
+            if st.session_state.get("nav_selection") == "👑 Admin":
+                st.session_state["nav_selection"] = "🏠 Inicio"
+            st.rerun()
 
 # ----------------- FIXED HEADER -----------------
 st.markdown(
@@ -854,10 +925,16 @@ if undone_days:
     if st.button(f"Procesar Cierre del {oldest_undone}", type="primary"):
         finalize_previous_dialog(oldest_undone)
 
+# ----------------- ROUTE PROTECTION -----------------
+if st.session_state.get("nav_selection") == "👑 Admin" and not st.session_state.get("admin_mode", False):
+    st.session_state["nav_selection"] = "🏠 Inicio"
+    st.rerun()
+
 # ----------------- PAGE: DASHBOARD (INICIO) -----------------
 if st.session_state["nav_selection"] == "🏠 Inicio":
     st.subheader("🏠 Panel de Inicio / Dashboard")
     st.write("Resumen ejecutivo del día actual y avance de los últimos 7 días hábiles.")
+    st.markdown("<p style='color: #64748B; font-size: 1.15rem; font-style: italic; margin-top: -15px; margin-bottom: 25px;'>Tu productividad al día</p>", unsafe_allow_html=True)
     
     # Calculations for Card 1 (Pizarra)
     today_tasks = get_tasks_by_user_and_date(selected_user, today_str)
@@ -907,34 +984,61 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
     col_c1, col_c2, col_c3 = st.columns(3)
     
     with col_c1:
-        with st.container(border=True):
-            st.markdown("### 🎯 Pizarra")
-            st.write(pizarra_resumen)
-            st.write(pizarra_avance)
-            st.write("")
-            if st.button("Ir a Pizarra", key="go_to_pizarra_btn", width="stretch"):
-                st.session_state["nav_selection"] = "📋 Pizarra"
-                st.rerun()
+        st.markdown(f"""
+        <div class="custom-card pizarra">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <span style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background-color: #d1fae5; font-size: 1.5rem;">🎯</span>
+                <span style="font-weight: 700; font-size: 1.4rem; color: #1E293B;">Pizarra</span>
+            </div>
+            <div class="card-metric-container">
+                <div class="card-metric-val" style="color: #f59e0b;">{pend_t}</div>
+                <div class="card-metric-lbl">tareas pendientes hoy</div>
+            </div>
+            <div class="card-metric-container">
+                <div class="card-metric-val" style="color: #10b981;">{progress_pct}%</div>
+                <div class="card-metric-lbl">de avance</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Ir a Pizarra", key="go_to_pizarra_btn", use_container_width=True):
+            st.session_state["nav_selection"] = "📋 Pizarra"
+            st.rerun()
                 
     with col_c2:
-        with st.container(border=True):
-            st.markdown("### 📊 Informes")
-            st.write(informes_resumen)
-            st.write(informes_pendientes)
-            st.write("")
-            if st.button("Ir a Informes", key="go_to_informes_btn", width="stretch"):
-                st.session_state["nav_selection"] = "📊 Informes"
-                st.rerun()
+        st.markdown(f"""
+        <div class="custom-card informes">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <span style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background-color: #dbeafe; font-size: 1.5rem;">📊</span>
+                <span style="font-weight: 700; font-size: 1.4rem; color: #1E293B;">Informes</span>
+            </div>
+            <div class="card-metric-container">
+                <div class="card-metric-val" style="color: #f59e0b;">{unresolved_count}</div>
+                <div class="card-metric-lbl">pendientes de resolver</div>
+            </div>
+            <div style='font-size: 0.95rem; color: #64748B; margin-bottom: 12px; font-weight: 500;'>{informes_resumen}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Ir a Informes", key="go_to_informes_btn", use_container_width=True):
+            st.session_state["nav_selection"] = "📊 Informes"
+            st.rerun()
                 
     with col_c3:
-        with st.container(border=True):
-            st.markdown("### 📥 Exportar")
-            st.write(exportar_resumen)
-            st.write(exportar_tareas)
-            st.write("")
-            if st.button("Ir a Exportar", key="go_to_exportar_btn", width="stretch"):
-                st.session_state["nav_selection"] = "📥 Exportar"
-                st.rerun()
+        st.markdown(f"""
+        <div class="custom-card exportar">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <span style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background-color: #fef3c7; font-size: 1.5rem;">📥</span>
+                <span style="font-weight: 700; font-size: 1.4rem; color: #1E293B;">Exportar</span>
+            </div>
+            <div class="card-metric-container">
+                <div class="card-metric-val" style="color: #3b82f6;">{exportar_count}</div>
+                <div class="card-metric-lbl">tareas exportadas</div>
+            </div>
+            <div style='font-size: 0.95rem; color: #64748B; margin-bottom: 12px; font-weight: 500;'>{exportar_resumen}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Ir a Exportar", key="go_to_exportar_btn", use_container_width=True):
+            st.session_state["nav_selection"] = "📥 Exportar"
+            st.rerun()
     
     # ----------------- PLOTLY DASHBOARD CHARTS -----------------
     st.markdown("### 📊 Gráficos Estadísticos del Dashboard")
@@ -1263,10 +1367,10 @@ elif st.session_state["nav_selection"] == "📋 Pizarra":
                             with c_txt:
                                 # Accent emerald for completed (green-crossed) / Warning amber for pending (orange) color overrides
                                 if completed:
-                                    st.markdown(f"<span style='color: #10B981; text-decoration: line-through; font-size: 0.9rem; font-weight: 500;'>{desc}</span>", unsafe_allow_html=True)
+                                    st.markdown(f"<span style='color: #10B981; text-decoration: line-through; font-size: 0.9rem; font-weight: 400;'>{desc}</span>", unsafe_allow_html=True)
                                 else:
                                     carry_lbl = " 🔄" if carried else ""
-                                    st.markdown(f"<span style='color: #F59E0B; font-size: 0.9rem; font-weight: 600;'>{desc}{carry_lbl}</span>", unsafe_allow_html=True)
+                                    st.markdown(f"<span style='color: #F59E0B; font-size: 0.9rem; font-weight: 400;'>{desc}{carry_lbl}</span>", unsafe_allow_html=True)
                                     
                             c_time, c_act = st.columns([2, 1])
                             with c_time:
@@ -1574,6 +1678,219 @@ elif st.session_state["nav_selection"] == "📅 Calendario":
                 st.markdown(f"✅ <span style='color: #10B981; text-decoration: line-through;'>{pt['description']}</span> *({time_info})* - Prioridad: **{prio}**", unsafe_allow_html=True)
             else:
                 st.markdown(f"⏳ <span style='color: #F59E0B; font-weight: 600;'>{pt['description']}</span> *({time_info})* - Prioridad: **{prio}**", unsafe_allow_html=True)
+
+
+# ----------------- PAGE: 👑 ADMIN -----------------
+elif st.session_state["nav_selection"] == "👑 Admin":
+    if not st.session_state.get("admin_mode", False):
+        st.session_state["nav_selection"] = "🏠 Inicio"
+        st.rerun()
+
+    st.subheader("👑 Panel de Administración Global")
+    st.write("Visualiza métricas generales, gestiona colaboradores, audita tareas y configura servicios.")
+
+    # 1. Global statistics
+    import sqlite3
+    try:
+        conn = sqlite3.connect("cuadropz.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM tasks")
+        total_tasks = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM reports")
+        total_reports = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM tasks WHERE completed = 1")
+        completed_tasks = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM tasks WHERE completed = 0")
+        pending_tasks = cursor.fetchone()[0]
+        conn.close()
+    except Exception as e:
+        st.error(f"Error al cargar estadísticas: {e}")
+        total_users = 0
+        total_tasks = 0
+        total_reports = 0
+        completed_tasks = 0
+        pending_tasks = 0
+
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+    with col_m1:
+        with st.container(border=True):
+            st.metric("👥 Colaboradores", total_users)
+    with col_m2:
+        with st.container(border=True):
+            st.metric("📋 Tareas Totales", total_tasks)
+    with col_m3:
+        with st.container(border=True):
+            st.metric("📊 Informes Generados", total_reports)
+    with col_m4:
+        with st.container(border=True):
+            st.metric("✅ Tareas Completadas vs ⏳ Pendientes", f"{completed_tasks} / {pending_tasks}")
+
+    st.divider()
+
+    # Create Tabs for Admin Sections to keep it clean and organized
+    tab_users, tab_audit, tab_config = st.tabs(["👥 Gestión de Usuarios", "🔍 Auditoría de Tareas", "⚙️ Configuración del Sistema"])
+
+    with tab_users:
+        st.markdown("### 👥 Gestión de Usuarios")
+        users_data = get_all_users_with_admin_status()
+        
+        # Header columns
+        col_th1, col_th2, col_th3, col_th4 = st.columns([3, 2, 2, 2])
+        col_th1.markdown("**Nombre**")
+        col_th2.markdown("**Rol**")
+        col_th3.markdown("**Acción Rol**")
+        col_th4.markdown("**Eliminar**")
+        
+        # Display users table
+        for u_row in users_data:
+            u_name = u_row['name']
+            is_admin = u_row['is_admin']
+            role_lbl = "👑 Administrador" if is_admin else "👤 Colaborador"
+            
+            col_u1, col_u2, col_u3, col_u4 = st.columns([3, 2, 2, 2])
+            with col_u1:
+                st.write(f"**{u_name}**")
+            with col_u2:
+                st.write(role_lbl)
+            with col_u3:
+                if st.button("Cambiar Rol", key=f"toggle_role_{u_name}", use_container_width=True):
+                    toggle_admin_status(u_name)
+                    st.success(f"Rol de {u_name} actualizado.")
+                    st.rerun()
+            with col_u4:
+                with st.popover("🗑️ Eliminar", use_container_width=True):
+                    st.warning(f"¿Seguro que deseas eliminar a {u_name}? Se borrarán todas sus tareas e informes.")
+                    if st.button("Sí, eliminar", key=f"confirm_delete_{u_name}", type="primary", use_container_width=True):
+                        if u_name == st.session_state.get("current_user"):
+                            st.error("No puedes eliminar al usuario activo en esta sesión.")
+                        else:
+                            if delete_user_by_admin(u_name):
+                                st.success(f"Usuario {u_name} eliminado.")
+                                st.rerun()
+                            else:
+                                st.error("Error al eliminar usuario.")
+        
+        st.markdown("---")
+        st.markdown("#### ➕ Agregar Nuevo Usuario")
+        col_add1, col_add2, col_add3 = st.columns([4, 3, 3])
+        with col_add1:
+            new_u_name = st.text_input("Nombre del nuevo colaborador:", key="admin_add_user_name")
+        with col_add2:
+            new_u_role = st.selectbox("Rol:", ["Colaborador", "Administrador"], key="admin_add_user_role")
+        with col_add3:
+            st.write("") # spacing
+            st.write("")
+            if st.button("Agregar Usuario", type="primary", use_container_width=True, key="admin_add_user_btn"):
+                if new_u_name.strip():
+                    is_admin_flag = 1 if new_u_role == "Administrador" else 0
+                    if add_user_with_role(new_u_name.strip(), is_admin_flag):
+                        st.success(f"Usuario {new_u_name.strip()} agregado con éxito.")
+                        st.rerun()
+                    else:
+                        st.error("Error: El usuario ya existe.")
+                else:
+                    st.error("El nombre no puede estar vacío.")
+
+    with tab_audit:
+        st.markdown("### 🔍 Auditoría de Tareas por Usuario")
+        list_users = [u['name'] for u in get_all_users_with_admin_status()]
+        selected_inspect_user = st.selectbox("Seleccionar colaborador para inspeccionar:", list_users, key="inspect_tasks_user_select")
+        
+        col_date1, col_date2 = st.columns(2)
+        with col_date1:
+            inspect_start_date = st.date_input("Fecha Inicio tareas:", today - datetime.timedelta(days=7), key="inspect_start_date")
+        with col_date2:
+            inspect_end_date = st.date_input("Fecha Fin tareas:", today + datetime.timedelta(days=7), key="inspect_end_date")
+            
+        try:
+            conn = sqlite3.connect("cuadropz.db")
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT date, description, time_info, priority, completed, carried_over_from
+                FROM tasks
+                WHERE user_name = ? AND date >= ? AND date <= ?
+                ORDER BY date DESC, order_num ASC
+            """, (selected_inspect_user, inspect_start_date.strftime("%Y-%m-%d"), inspect_end_date.strftime("%Y-%m-%d")))
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception as e:
+            st.error(f"Error al cargar tareas: {e}")
+            rows = []
+            
+        if not rows:
+            st.info(f"No hay tareas registradas para {selected_inspect_user} en el rango seleccionado.")
+        else:
+            for r in rows:
+                t_date, desc, time_info, prio, completed, carried = r
+                t_date_dt = datetime.datetime.strptime(t_date, "%Y-%m-%d").date()
+                t_date_str = t_date_dt.strftime("%d/%m/%Y")
+                
+                completed_icon = "✅" if completed else "⏳"
+                carried_lbl = " 🔄" if carried else ""
+                time_lbl = f"🕒 ({time_info})" if time_info else ""
+                prio_color = "red" if prio == "Alta" else ("orange" if prio == "Media" else "green")
+                
+                col_t1, col_t2 = st.columns([2, 8])
+                with col_t1:
+                    st.write(f"**{t_date_str}**")
+                with col_t2:
+                    st.markdown(f"{completed_icon} **{desc}**{carried_lbl} {time_lbl} — Prioridad: :{prio_color}[{prio}]")
+
+    with tab_config:
+        st.markdown("### ⚙️ Configuración de IA (Gemini)")
+        st.text_input(
+            "Clave API de Gemini:",
+            type="password",
+            key="gemini_api_key",
+            placeholder="AIzaSy...",
+        )
+        st.caption("Necesario para regenerar sugerencias y responder al asistente virtual en el chat.")
+        
+        st.divider()
+        st.markdown("### 📧 Configuración de Correo Electrónico (SMTP)")
+        
+        smtp_server = st.text_input("Servidor SMTP:", value=email_config.get("smtp_server", "smtp.gmail.com"), key="admin_smtp_server")
+        smtp_port = st.text_input("Puerto SMTP:", value=email_config.get("smtp_port", "587"), key="admin_smtp_port")
+        sender_email = st.text_input("Correo Emisor:", value=email_config.get("sender_email", ""), key="admin_sender_email", placeholder="tu@gmail.com")
+        sender_password = st.text_input("Contraseña de Aplicación:", value=email_config.get("sender_password", ""), type="password", key="admin_sender_password", placeholder="xxxx xxxx")
+        recipient_email = st.text_input("Correo Destinatario:", value=email_config.get("recipient_email", ""), key="admin_recipient_email", placeholder="destinatario@gmail.com")
+        
+        auto_send_enabled = st.checkbox("Activar recordatorio automático (8:00 AM)", value=email_config.get("auto_send_enabled", False), key="admin_auto_send_enabled")
+        
+        col_email_btn1, col_email_btn2 = st.columns(2)
+        with col_email_btn1:
+            if st.button("💾 Guardar Configuración", key="admin_save_email_config_btn", use_container_width=True):
+                new_cfg = {
+                    "smtp_server": smtp_server,
+                    "smtp_port": smtp_port,
+                    "sender_email": sender_email,
+                    "sender_password": sender_password,
+                    "recipient_email": recipient_email,
+                    "auto_send_enabled": auto_send_enabled,
+                    "last_sent_date": email_config.get("last_sent_date", "")
+                }
+                if save_email_config(new_cfg):
+                    st.success("Configuración de correo guardada con éxito.")
+                    email_config = new_cfg
+                else:
+                    st.error("Error al guardar la configuración.")
+        with col_email_btn2:
+            if st.button("🧪 Probar Conexión", key="admin_test_email_btn", use_container_width=True):
+                if not sender_email or not sender_password or not recipient_email:
+                    st.warning("Faltan datos de envío para realizar la prueba.")
+                else:
+                    with st.spinner("Enviando correo de prueba..."):
+                        success, msg = send_email(
+                            smtp_server, smtp_port, sender_email, sender_password, 
+                            recipient_email, "🧪 Correo de prueba - CUADROpz Admin", 
+                            "Este es un correo de prueba enviado desde la pestaña de administración de CUADROpz."
+                        )
+                        if success:
+                            st.success("¡Correo de prueba enviado con éxito!")
+                        else:
+                            st.error(msg)
 
 
 # ----------------- FLOATING ALERTS & NOTIFICATIONS CENTER (FAB) -----------------

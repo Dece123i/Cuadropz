@@ -52,14 +52,21 @@ def db_init():
     # Create users table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
-        name TEXT PRIMARY KEY
+        name TEXT PRIMARY KEY,
+        is_admin INTEGER DEFAULT 0
     )
     """)
     
+    # Migration for existing DBs
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+        
     # Insert default users if empty
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
-        cursor.executemany("INSERT INTO users (name) VALUES (?)", [("MARY CRUZ",), ("CPC.SHEYLA",), ("CPC.HECTOR",)])
+        cursor.executemany("INSERT INTO users (name, is_admin) VALUES (?, ?)", [("MARY CRUZ", 0), ("CPC.SHEYLA", 0), ("CPC.HECTOR", 0)])
         
     conn.commit()
     conn.close()
@@ -660,5 +667,47 @@ def update_report_suggestions(report_id, suggestions_list):
     """, (json.dumps(suggestions_list), report_id))
     conn.commit()
     conn.close()
+
+def get_all_users_with_admin_status():
+    """
+    Returns all users with their admin status.
+    """
+    conn = db_connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, is_admin FROM users ORDER BY name ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"name": r[0], "is_admin": r[1]} for r in rows]
+
+def toggle_admin_status(user_name):
+    """
+    Toggles the is_admin status of a user.
+    """
+    conn = db_connect()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET is_admin = 1 - is_admin WHERE name = ?", (user_name,))
+    conn.commit()
+    conn.close()
+
+def delete_user_by_admin(user_name):
+    """
+    Deletes a user from all tables.
+    """
+    return delete_user(user_name)
+
+def add_user_with_role(name, is_admin):
+    """
+    Adds a new user with a specific admin role status.
+    """
+    conn = db_connect()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO users (name, is_admin) VALUES (?, ?)", (name.strip(), 1 if is_admin else 0))
+        conn.commit()
+        success = True
+    except sqlite3.IntegrityError:
+        success = False
+    conn.close()
+    return success
 
 
