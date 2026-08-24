@@ -943,6 +943,13 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
     pend_t = total_t - comp_t
     progress_pct = int((comp_t / total_t) * 100) if total_t > 0 else 0
 
+    # Cálculo de unresolved_count para la tarjeta de Informes
+    last_report = get_last_report(selected_user)
+    if last_report:
+        unresolved_count = len(last_report.get('unresolved_tasks', []))
+    else:
+        unresolved_count = 0
+
     if total_t == 0:
         pizarra_resumen = "Aún no tienes tareas para hoy"
         pizarra_avance = "Completado: 0%"
@@ -951,7 +958,6 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
         pizarra_avance = f"Completado: **{progress_pct}%**"
 
     # Calculations for Card 2 (Informes)
-    last_report = get_last_report(selected_user)
     if last_report:
         try:
             report_date_dt = datetime.datetime.strptime(last_report['date'], "%Y-%m-%d")
@@ -959,7 +965,6 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
         except Exception:
             report_date_str = last_report['date']
         informes_resumen = f"Último informe generado: **{report_date_str}**"
-        unresolved_count = len(last_report.get('unresolved_tasks', []))
         informes_pendientes = f"Tareas no resueltas pendientes: **{unresolved_count}**"
     else:
         informes_resumen = "No hay informes generados"
