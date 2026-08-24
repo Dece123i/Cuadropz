@@ -212,3 +212,45 @@ def generate_single_alternative(api_key, task_desc, previous_suggestion=None, te
         "reasignacion_sugerida": "",
         "alternativa_solucion": "Para completar esta actividad, recomiendo redactar una minuta y revaluar el plan de entrega."
     }
+
+def generate_execution_reason(task_description, user_name, api_key=None):
+    """
+    Generates a professional, brief (2-3 lines) reason why a task was not completed using Gemini.
+    """
+    import streamlit as st
+    if not api_key:
+        try:
+            api_key = st.session_state.get("gemini_api_key", "")
+        except Exception:
+            pass
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        
+    if not api_key or not str(api_key).strip():
+        return f"Debido a limitaciones de tiempo y priorización de otras actividades críticas de la jornada de {user_name}, no se completó la tarea."
+        
+    try:
+        genai.configure(api_key=api_key.strip())
+        client = genai.Client(http_options={'api_version': 'v1'})
+        
+        prompt = (
+            f"Genera un motivo profesional y conciso para justificar por qué no se completó la siguiente tarea. "
+            f"La tarea es: '{task_description}'. El responsable es: '{user_name}'. "
+            f"Responde en 2-3 líneas con un tono profesional y objetivo."
+        )
+        
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="Eres un asistente de gestión de proyectos corporativos. Genera respuestas concisas, profesionales y breves en español.",
+                temperature=0.7
+            )
+        )
+        reason = response.text.strip()
+        if reason:
+            return reason
+    except Exception as e:
+        print("Error generating execution reason with Gemini:", e)
+        
+    return f"Por recarga de labores y reasignación de prioridades del día para {user_name}, no se completó la tarea."

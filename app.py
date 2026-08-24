@@ -14,12 +14,12 @@ from database import (
     get_tasks_by_user_and_date, get_completed_tasks_count, get_last_report,
     get_last_export_info, save_last_export_info, update_report_suggestions,
     get_all_users_with_admin_status, toggle_admin_status, delete_user_by_admin,
-    add_user_with_role
+    add_user_with_role, update_task_execution_status
 )
 import importlib
 import ai_helper
 importlib.reload(ai_helper)
-from ai_helper import generate_alternatives, generate_single_alternative
+from ai_helper import generate_alternatives, generate_single_alternative, generate_execution_reason
 from excel_helper import export_weekly_tasks_to_excel, get_week_dates
 from email_helper import send_email, load_email_config, save_email_config
 
@@ -1563,6 +1563,29 @@ elif st.session_state["nav_selection"] == "📊 Informes":
                                             st.rerun()
                                         else:
                                             st.error("No se pudo obtener respuesta de la IA. Verifique su API key.")
+                        
+                        # Campo de motivo de no ejecución
+                        current_status = t.get('execution_status', '')
+                        col_mot, col_mot_btn = st.columns([5, 2])
+                        with col_mot:
+                            motivo_input = st.text_area(
+                                "En avance o motivo de no ejecución:",
+                                value=current_status,
+                                placeholder="Explica por qué no se ejecutó (opcional)",
+                                key=f"motivo_val_{rep['id']}_{idx}",
+                                height=80
+                            )
+                        with col_mot_btn:
+                            st.write("") # Espaciado vertical para alinear con el area
+                            st.write("")
+                            st.write("")
+                            if st.button("💾 Guardar Motivo", key=f"save_motivo_{rep['id']}_{idx}", use_container_width=True):
+                                with st.spinner("Guardando motivo..."):
+                                    final_status = motivo_input.strip()
+                                    update_task_execution_status(rep['id'], idx, final_status)
+                                    st.success("Motivo guardado con éxito.")
+                                    st.rerun()
+                        st.write("") # Espaciado entre tareas
 
 
 # ----------------- PAGE: EXPORTAR -----------------

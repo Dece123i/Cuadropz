@@ -37,7 +37,8 @@ def db_init():
         date TEXT NOT NULL,
         resolved_tasks TEXT,
         unresolved_tasks TEXT,
-        alternatives_of_solution TEXT
+        alternatives_of_solution TEXT,
+        execution_status TEXT
     )
     """)
     
@@ -60,6 +61,11 @@ def db_init():
     # Migration for existing DBs
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+        
+    try:
+        cursor.execute("ALTER TABLE reports ADD COLUMN execution_status TEXT")
     except sqlite3.OperationalError:
         pass
         
@@ -431,11 +437,19 @@ def finalize_day(user_name, date_str, resolved_list, unresolved_list, alternativ
     conn = db_connect()
     cursor = conn.cursor()
     
+    # Ensure each unresolved task dictionary has an 'execution_status' key initialized to ''
+    for task in unresolved_list:
+        if isinstance(task, dict):
+            task['execution_status'] = ""
+            
+    # Default execution status is empty for each unresolved task
+    execution_status_list = [""] * len(unresolved_list)
+    
     # 1. Save Report
     cursor.execute("""
-        INSERT INTO reports (user_name, date, resolved_tasks, unresolved_tasks, alternatives_of_solution)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_name, date_str, json.dumps(resolved_list), json.dumps(unresolved_list), json.dumps(alternatives_list)))
+        INSERT INTO reports (user_name, date, resolved_tasks, unresolved_tasks, alternatives_of_solution, execution_status)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_name, date_str, json.dumps(resolved_list), json.dumps(unresolved_list), json.dumps(alternatives_list), json.dumps(execution_status_list)))
     
     # 2. Update user last finalized date
     cursor.execute("""
@@ -527,7 +541,7 @@ def get_reports(user_name=None, start_date=None, end_date=None):
     conn = db_connect()
     cursor = conn.cursor()
     
-    query = "SELECT id, user_name, date, resolved_tasks, unresolved_tasks, alternatives_of_solution FROM reports WHERE 1=1"
+    query = "SELECT id, user_name, date, resolved_tasks, unresolved_tasks, alternatives_of_solution, execution_status FROM reports WHERE 1=1"
     params = []
     
     if user_name:
@@ -548,15 +562,76 @@ def get_reports(user_name=None, start_date=None, end_date=None):
     
     reports = []
     for r in rows:
+        unresolved = json.loads(r[4]) if r[4] else []
+        n = len(unresolved)
+        status_list = []
+        if len(r) > 6 and r[6]:
+            try:
+                status_list = json.loads(r[6])
+            except Exception:
+                status_list = [""] * n
+        else:
+            status_list = [""] * n
+            
+        # Align lengths of status_list and unresolved
+        if len(status_list) < n:
+            status_list.extend([""] * (n - len(status_list)))
+        elif len(status_list) > n:
+            status_list = status_list[:n]
+            
+        # Add execution_status key directly to each unresolved task dict for easy consumption
+        for idx, task in enumerate(unresolved):
+            if isinstance(task, dict):
+                task['execution_status'] = status_list[idx]
+                
         reports.append({
             'id': r[0],
             'user_name': r[1],
             'date': r[2],
             'resolved_tasks': json.loads(r[3]) if r[3] else [],
-            'unresolved_tasks': json.loads(r[4]) if r[4] else [],
-            'alternatives_of_solution': json.loads(r[5]) if r[5] else []
+            'unresolved_tasks': unresolved,
+            'alternatives_of_solution': json.loads(r[5]) if r[5] else [],
+            'execution_status': status_list
         })
     return reports
+
+def update_task_execution_status(report_id, task_index, status):
+    """
+    Updates the execution status (motivo) of a specific unresolved task in a report.
+    """
+    conn = db_connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT unresolved_tasks, execution_status FROM reports WHERE id = ?", (report_id,))
+    row = cursor.fetchone()
+    if row:
+        unresolved_tasks = json.loads(row[0]) if row[0] else []
+        n = len(unresolved_tasks)
+        if row[1]:
+            try:
+                status_list = json.loads(row[1])
+            except Exception:
+                status_list = [""] * n
+        else:
+            status_list = [""] * n
+            
+        # Adjust length of status_list if needed
+        if len(status_list) < n:
+            status_list.extend([""] * (n - len(status_list)))
+        elif len(status_list) > n:
+            status_list = status_list[:n]
+            
+        if 0 <= task_index < n:
+            status_list[task_index] = status
+            if isinstance(unresolved_tasks[task_index], dict):
+                unresolved_tasks[task_index]['execution_status'] = status
+            
+        cursor.execute("""
+            UPDATE reports 
+            SET execution_status = ?, unresolved_tasks = ? 
+            WHERE id = ?
+        """, (json.dumps(status_list), json.dumps(unresolved_tasks), report_id))
+        conn.commit()
+    conn.close()
 
 def get_days_with_pending_tasks(user_name):
     """

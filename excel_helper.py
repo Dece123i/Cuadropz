@@ -2,6 +2,7 @@ import datetime
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from database import get_tasks, get_reports, get_users
+from ai_helper import generate_execution_reason
 
 def get_week_dates(monday_str):
     """
@@ -208,11 +209,16 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
     sheet_nc.views.sheetView[0].showGridLines = True
     
     # Headers
-    headers_nc = ["Día", "Tarea No Cumplida", "Alternativa de Solución"]
-    for col_idx, text in enumerate(headers_nc, start=2): # Column B (2), C (3), D (4)
+    headers_nc = [
+        "RESPONSABLE", 
+        "ACTIVIDAD NO EJECUTADA", 
+        "EN AVANCE O MOTIVO DE NO EJECUCIÓN", 
+        "SOLUCIÓN Y/O MEDIDA ADOPTADA POR EL RESPONSABLE DE ÁREA"
+    ]
+    for col_idx, text in enumerate(headers_nc, start=2): # Column B (2), C (3), D (4), E (5)
         cell = sheet_nc.cell(row=3, column=col_idx, value=text)
         cell.font = Font(name="Calibri", size=11, bold=True, color="000000")
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
         cell.border = Border(
             left=Side(style='thin', color='D9D9D9'),
@@ -225,13 +231,8 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
     users_list = db_users if db_users else ["MARY CRUZ", "CPC.SHEYLA", "CPC.HECTOR"]
     
     pending_tasks_data = []
-    day_names_nc = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
     
-    for day_idx, date_str in enumerate(week_dates):
-        day_name = day_names_nc[day_idx]
-        d_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-        day_label = f"{day_name} {d_obj.strftime('%d/%m')}"
-        
+    for date_str in week_dates:
         for user_name in users_list:
             tasks = get_tasks(user_name, date_str)
             pending_tasks = [t for t in tasks if t['completed'] == 0]
@@ -241,18 +242,21 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
                 
             reports = get_reports(user_name, date_str, date_str)
             report_suggestions = {}
+            report_reasons = {}
             if reports:
                 rep = reports[0]
                 rep_unresolved = rep.get('unresolved_tasks', [])
                 rep_alts = rep.get('alternatives_of_solution', [])
                 for idx, ut in enumerate(rep_unresolved):
+                    desc_key = ut.get('description', '').strip().upper()
                     if idx < len(rep_alts):
-                        key = ut.get('description', '').strip().upper()
-                        report_suggestions[key] = rep_alts[idx]
+                        report_suggestions[desc_key] = rep_alts[idx]
+                    report_reasons[desc_key] = ut.get('execution_status', '')
                         
             for task in pending_tasks:
                 desc_key = task['description'].strip().upper()
                 solution_val = report_suggestions.get(desc_key, "")
+                reason_val = report_reasons.get(desc_key, "")
                 
                 # Extract solution text from dictionary or string representation
                 if isinstance(solution_val, dict):
@@ -272,24 +276,25 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
                 
                 t_desc = task['description']
                 t_time = task['time_info']
-                task_str = f"[{user_name}] {t_desc}"
+                task_str = t_desc
                 if t_time and str(t_time).strip() != "" and str(t_time).upper() != "NONE":
                     task_str += f" - {t_time}"
                     
                 pending_tasks_data.append({
-                    "day": day_label,
+                    "responsable": user_name,
                     "task": task_str,
+                    "reason": reason_val,
                     "solution": solution
                 })
                 
     current_nc_row = 4
     if not pending_tasks_data:
-        sheet_nc.merge_cells(start_row=current_nc_row, start_column=2, end_row=current_nc_row, end_column=4)
+        sheet_nc.merge_cells(start_row=current_nc_row, start_column=2, end_row=current_nc_row, end_column=5)
         cell = sheet_nc.cell(row=current_nc_row, column=2, value="¡Todas las tareas fueron completadas!")
         cell.font = Font(name="Calibri", size=11, bold=True, italic=True, color="1a7f37")
         cell.alignment = Alignment(horizontal="center", vertical="center")
         border_side = Side(style='thin', color='D9D9D9')
-        for col in range(2, 5):
+        for col in range(2, 6):
             sheet_nc.cell(row=current_nc_row, column=col).border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
     else:
         border_side = Side(style='thin', color='D9D9D9')
@@ -300,17 +305,22 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
         align_center = Alignment(horizontal="center", vertical="center")
         
         for item in pending_tasks_data:
-            c_day = sheet_nc.cell(row=current_nc_row, column=2, value=item["day"])
-            c_day.font = font_task
-            c_day.alignment = align_center
-            c_day.border = border_task
+            c_resp = sheet_nc.cell(row=current_nc_row, column=2, value=item["responsable"])
+            c_resp.font = font_task
+            c_resp.alignment = align_center
+            c_resp.border = border_task
             
             c_task = sheet_nc.cell(row=current_nc_row, column=3, value=item["task"])
             c_task.font = font_task
             c_task.alignment = align_left
             c_task.border = border_task
             
-            c_sol = sheet_nc.cell(row=current_nc_row, column=4, value=item["solution"])
+            c_reason = sheet_nc.cell(row=current_nc_row, column=4, value=item["reason"])
+            c_reason.font = font_task
+            c_reason.alignment = align_left
+            c_reason.border = border_task
+            
+            c_sol = sheet_nc.cell(row=current_nc_row, column=5, value=item["solution"])
             c_sol.font = font_task
             c_sol.alignment = align_left
             c_sol.border = border_task
@@ -318,9 +328,10 @@ def export_weekly_tasks_to_excel(monday_str, output_path):
             current_nc_row += 1
             
     sheet_nc.column_dimensions['A'].width = 3
-    sheet_nc.column_dimensions['B'].width = 18 # Day
-    sheet_nc.column_dimensions['C'].width = 45 # Task
-    sheet_nc.column_dimensions['D'].width = 55 # Solution
+    sheet_nc.column_dimensions['B'].width = 18 # Responsable
+    sheet_nc.column_dimensions['C'].width = 45 # Actividad No Ejecutada
+    sheet_nc.column_dimensions['D'].width = 45 # En Avance o Motivo de No Ejecución
+    sheet_nc.column_dimensions['E'].width = 55 # Solución y/o Medida Adoptada
     
     # Save file
     wb.save(output_path)
