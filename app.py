@@ -936,19 +936,13 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
     st.write("Resumen ejecutivo del día actual y avance de los últimos 7 días hábiles.")
     st.markdown("<p style='color: #64748B; font-size: 1.15rem; font-style: italic; margin-top: -15px; margin-bottom: 25px;'>Tu productividad al día</p>", unsafe_allow_html=True)
     
-    # Calculations for Card 1 (Pizarra)
+    # Calculations for Dashboard Cards
+    # Card 1 (Pizarra)
     today_tasks = get_tasks_by_user_and_date(selected_user, today_str)
     total_t = len(today_tasks)
     comp_t = get_completed_tasks_count(selected_user, today_str)
     pend_t = total_t - comp_t
     progress_pct = int((comp_t / total_t) * 100) if total_t > 0 else 0
-
-    # Cálculo de unresolved_count para la tarjeta de Informes
-    last_report = get_last_report(selected_user)
-    if last_report:
-        unresolved_count = len(last_report.get('unresolved_tasks', []))
-    else:
-        unresolved_count = 0
 
     if total_t == 0:
         pizarra_resumen = "Aún no tienes tareas para hoy"
@@ -957,7 +951,8 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
         pizarra_resumen = f"Tienes **{pend_t}** tareas pendientes de hoy de un total de **{total_t}**"
         pizarra_avance = f"Completado: **{progress_pct}%**"
 
-    # Calculations for Card 2 (Informes)
+    # Card 2 (Informes)
+    last_report = get_last_report(selected_user)
     if last_report:
         try:
             report_date_dt = datetime.datetime.strptime(last_report['date'], "%Y-%m-%d")
@@ -965,12 +960,14 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
         except Exception:
             report_date_str = last_report['date']
         informes_resumen = f"Último informe generado: **{report_date_str}**"
+        unresolved_count = len(last_report.get('unresolved_tasks', []))
         informes_pendientes = f"Tareas no resueltas pendientes: **{unresolved_count}**"
     else:
         informes_resumen = "No hay informes generados"
+        unresolved_count = 0
         informes_pendientes = "Tareas no resueltas pendientes: **0**"
 
-    # Calculations for Card 3 (Exportar)
+    # Card 3 (Exportar)
     export_info = get_last_export_info()
     if export_info:
         try:
@@ -983,6 +980,7 @@ if st.session_state["nav_selection"] == "🏠 Inicio":
         exportar_tareas = f"Total de tareas exportadas en la última semana: **{exportar_count}**"
     else:
         exportar_resumen = "Última exportación: **Ninguna**"
+        exportar_count = 0
         exportar_tareas = "Total de tareas exportadas en la última semana: **0**"
 
     # Row of Cards
