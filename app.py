@@ -1237,7 +1237,7 @@ def main_page():
                 for sugg in suggestions:
                     with ui.card().classes('w-full p-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200/50 rounded-lg cursor-pointer transition-colors shadow-sm') as sugg_btn:
                         sugg_btn.on('click', lambda _, s=sugg: send_chat_message(s))
-                        ui.label(s).classes('text-xs font-medium text-slate-700 w-full text-left')
+                        ui.label(sugg).classes('text-xs font-medium text-slate-700 w-full text-left')
             
             # Scroll to bottom
             ui.run_javascript("setTimeout(() => { const el = document.getElementById('chat_messages'); if(el) { el.scrollTop = el.scrollHeight; } }, 50)")
