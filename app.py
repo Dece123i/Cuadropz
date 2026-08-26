@@ -1201,6 +1201,10 @@ def main_page():
             minimize_btn.props('icon=keyboard_arrow_down')
 
     def refresh_chat_messages():
+        if not state.get('assistant_messages'):
+            state['assistant_messages'] = [
+                {"role": "assistant", "content": "Hola, soy tu asistente de CUADROpz. ¿En qué puedo ayudarte hoy?"}
+            ]
         with messages_area:
             messages_area.clear()
             for msg in state['assistant_messages']:
@@ -1328,7 +1332,9 @@ def main_page():
             
             def run_gemini_streaming():
                 try:
-                    client = genai.Client(http_options={'api_version': 'v1'})
+                    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+                    print(f"[DEBUG GEMINI] Iniciando stream con gemini-3.6-flash. Clave presente: {bool(gemini_key)}")
+                    client = genai.Client(api_key=gemini_key, http_options={'api_version': 'v1'})
                     try:
                         chat = client.chats.create(
                             model='gemini-3.6-flash',
@@ -1339,7 +1345,7 @@ def main_page():
                             )
                         )
                     except Exception as e_flash:
-                        print("Error creating chat with gemini-3.6-flash, trying fallback to gemini-2.0-flash-lite:", e_flash)
+                        print("[DEBUG GEMINI] Error con gemini-3.6-flash, probando fallback a gemini-2.0-flash-lite:", e_flash)
                         chat = client.chats.create(
                             model='gemini-2.0-flash-lite',
                             history=formatted_history,
@@ -1353,6 +1359,9 @@ def main_page():
                         if chunk.text:
                             q.put(chunk.text)
                 except Exception as e:
+                    print("[DEBUG GEMINI] Error en el hilo de streaming:", e)
+                    import traceback
+                    traceback.print_exc()
                     q.put(e)
                 finally:
                     q.put(None)
@@ -1381,14 +1390,15 @@ def main_page():
                     refresh_chat_messages()
                     
             try:
-                # 30 second timeout for the entire generation stream
-                await asyncio.wait_for(consume_queue(), timeout=30.0)
+                # 60 second timeout for the entire generation stream
+                await asyncio.wait_for(consume_queue(), timeout=60.0)
             except asyncio.TimeoutError:
+                print("[DEBUG GEMINI] Timeout de 60 segundos alcanzado!")
                 if state['assistant_messages'] and state['assistant_messages'][-1].get("is_thinking"):
                     state['assistant_messages'].pop()
                 state['assistant_messages'].append({
                     "role": "assistant",
-                    "content": "⏳ La respuesta está tomando más tiempo de lo esperado. Intenta de nuevo o reformula tu pregunta."
+                    "content": "⏳ La respuesta está tomando más tiempo de lo esperado (Timeout de 60 segundos). Por favor, intenta de nuevo o reformula tu pregunta."
                 })
             except Exception as e_inner:
                 if state['assistant_messages'] and state['assistant_messages'][-1].get("is_thinking"):
@@ -1764,6 +1774,7 @@ def main_page():
     # Initial page render load
     refresh_sidebar_navigation()
     refresh_layout()
+    refresh_chat_messages()
 
 # NiceGUI run configurations
 if __name__ in {'__main__', '__mp_main__'}:
